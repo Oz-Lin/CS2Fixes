@@ -55,6 +55,7 @@ extern CGameEntitySystem *g_pEntitySystem;
 extern IGameEventManager2 *g_gameEventManager;
 extern CCSGameRules *g_pGameRules;
 extern CMapVoteSystem *g_pMapVoteSystem;
+extern IVEngineServer2* g_pEngineServer2;
 
 CUtlVector<CDetourBase *> g_vecDetours;
 
@@ -318,7 +319,9 @@ void SayChatMessageWithTimer(IRecipientFilter &filter, const char *pText, CCSPla
 		V_snprintf(buf, sizeof(buf), "%s %s %s %2d:%02d", " \7CONSOLE:\4", pText + sizeof("Console:"), "\x10- @", mins, secs);
 
 		//parse to external CS# countdown timer plugin
-		ConMsg(buf, sizeof(buf), "css_countdown_text %s %s \n", iTriggerTime, pText + sizeof("Console:"));
+		V_snprintf(buf, sizeof(buf), "css_countdown_text %s %s \n", iTriggerTime, pText + sizeof("Console:"));
+		g_pEngineServer2->ServerCommand(buf);
+		
 	}
 	else
 		V_snprintf(buf, sizeof(buf), "%s %s", " \7CONSOLE:\4", pText + sizeof("Console:"));
