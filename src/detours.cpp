@@ -319,7 +319,7 @@ void SayChatMessageWithTimer(IRecipientFilter &filter, const char *pText, CCSPla
 		V_snprintf(buf, sizeof(buf), "%s %s %s %2d:%02d", " \7CONSOLE:\4", pText + sizeof("Console:"), "\x10- @", mins, secs);
 
 		//parse to external CS# countdown timer plugin
-		V_snprintf(buf, sizeof(buf), "css_countdown_text %s \"%s\" \n", iTriggerTime, pText + sizeof("Console:"));
+		V_snprintf(buf, sizeof(buf), "css_countdown_text %d \"%s\" \n", iTriggerTime, pText + sizeof("Console:"));
 		g_pEngineServer2->ServerCommand(buf);
 		
 	}
