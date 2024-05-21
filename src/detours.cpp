@@ -136,14 +136,6 @@ std::unordered_set<uint64> g_PushEntSet;
 
 void FASTCALL Detour_TriggerPush_Touch(CTriggerPush* pPush, CBaseEntity* pOther)
 {
-	// Fitting both handles into a single uint64
-	uint64 iPushID = ((uint64)pPush->GetHandle().ToInt() << 32) + pOther->GetHandle().ToInt();
-
-	// We're inserting the push ID into a set and if that fails it means this trigger already pushed the other ent in this tick
-	// The set is cleared on the next tick
-	if (g_bPreventMultiPush && !g_PushEntSet.insert(iPushID).second)
-		return;
-
 	// This trigger pushes only once (and kills itself) or pushes only on StartTouch, both of which are fine already
 	if (!g_bUseOldPush || pPush->m_spawnflags() & SF_TRIG_PUSH_ONCE || pPush->m_bTriggerOnStartTouch())
 	{
@@ -495,7 +487,8 @@ public:
 
 void* FASTCALL Detour_ProcessUsercmds(CBasePlayerPawn *pPawn, CUserCmd *cmds, int numcmds, bool paused, float margin)
 {
-	if (!g_bDisableSubtick)
+	// Push fix only works properly if subtick movement is also disabled
+	if (!g_bDisableSubtick && !g_bUseOldPush)
 		return ProcessUsercmds(pPawn, cmds, numcmds, paused, margin);
 
 	VPROF_SCOPE_BEGIN("Detour_ProcessUsercmds");

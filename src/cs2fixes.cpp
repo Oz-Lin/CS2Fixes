@@ -46,6 +46,7 @@
 #include "votemanager.h"
 #include "zombiereborn.h"
 #include "httpmanager.h"
+#include "idlemanager.h"
 #include "discord.h"
 #include "map_votes.h"
 #include "user_preferences.h"
@@ -299,6 +300,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	g_pUserPreferencesStorage = new CUserPreferencesREST();
 	g_pZRWeaponConfig = new ZRWeaponConfig();
 	g_pEntityListener = new CEntityListener();
+	g_pIdleSystem = new CIdleSystem();
 
 	RegisterWeaponCommands();
 
@@ -314,6 +316,13 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI *ismm, char *error, size_t maxlen, bool
 	{
 		g_playerManager->CheckInfractions();
 		return 30.0f;
+	});
+
+	// Check for idle players and kick them if permitted by cs2f_idle_kick_* 'convars'
+	new CTimer(5.0f, true, true, []()
+	{
+		g_pIdleSystem->CheckForIdleClients();
+		return 5.0f;
 	});
 
 	// run our cfg
@@ -382,6 +391,9 @@ bool CS2Fixes::Unload(char *error, size_t maxlen)
 
 	if (g_pEntityListener)
 		delete g_pEntityListener;
+
+	if (g_pIdleSystem)
+		delete g_pIdleSystem;
 
 	if (g_iCGamePlayerEquipUseId != -1)
 		SH_REMOVE_HOOK_ID(g_iCGamePlayerEquipUseId);
@@ -507,6 +519,8 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 			g_ExtendState = EExtendState::EXTEND_ALLOWED;
 		return -1.0f;
 	});
+
+	g_pIdleSystem->Reset();
 }
 
 class CGamePlayerEquip;
@@ -561,7 +575,7 @@ void CS2Fixes::Hook_PostEvent(CSplitScreenSlot nSlot, bool bLocalOnly, int nClie
 
 			// original weapon_id will override new settings if not removed
 			msg->set_weapon_id(0);
-			msg->set_sound_type(10);
+			msg->set_sound_type(9);
 			msg->set_item_def_index(61); // weapon_usp_silencer
 
 			uint64 clientMask = *(uint64 *)clients & g_playerManager->GetSilenceSoundMask();
@@ -641,6 +655,14 @@ void CS2Fixes::Hook_ClientCommand( CPlayerSlot slot, const CCommand &args )
 #ifdef _DEBUG
 	Message( "Hook_ClientCommand(%d, \"%s\")\n", slot, args.GetCommandString() );
 #endif
+
+	if (g_fIdleKickTime > 0.0f)
+	{
+		ZEPlayer* pPlayer = g_playerManager->GetPlayer(slot);
+
+		if (pPlayer)
+			pPlayer->UpdateLastInputTime();
+	}
 
 	if (g_bVoteManagerEnable && V_stricmp(args[0], "endmatch_votenextmap") == 0 && args.ArgC() == 2)
 	{
@@ -745,9 +767,6 @@ void CS2Fixes::Hook_GameFramePost(bool simulating, bool bFirstTick, bool bLastTi
 		}
 	}
 
-	extern std::unordered_set<uint64> g_PushEntSet;
-	g_PushEntSet.clear();
-
 	if (g_bEnableZR)
 		CZRRegenTimer::Tick();
 
@@ -845,12 +864,21 @@ void CS2Fixes::Hook_CreateWorkshopMapGroup(const char* name, const CUtlStringLis
 		RETURN_META(MRES_IGNORED);
 }
 
+bool g_bDropMapWeapons = false;
+
+FAKE_BOOL_CVAR(cs2f_drop_map_weapons, "Whether to force drop map-spawned weapons on death", g_bDropMapWeapons, false, false)
+
 bool CS2Fixes::Hook_OnTakeDamage_Alive(CTakeDamageInfo *pInfo, void *a3)
 {
 	CCSPlayerPawn *pPawn = META_IFACEPTR(CCSPlayerPawn);
 
 	if (g_bEnableZR && ZR_Hook_OnTakeDamage_Alive(pInfo, pPawn))
 		RETURN_META_VALUE(MRES_SUPERCEDE, false);
+
+	// This is a shit place to be doing this, but player_death event is too late and there is no pre-hook alternative
+	// Check if this is going to kill the player
+	if (g_bDropMapWeapons && pPawn && pPawn->m_iHealth - pInfo->m_flDamage <= 0)
+		pPawn->DropMapWeapons();
 
 	RETURN_META_VALUE(MRES_IGNORED, true);
 }
