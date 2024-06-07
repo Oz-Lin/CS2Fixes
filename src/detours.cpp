@@ -309,7 +309,7 @@ void SayChatMessageWithTimer(IRecipientFilter &filter, const char *pText, CCSPla
 
 
 		//parse to external CS# countdown timer plugin
-		V_snprintf(buf, sizeof(buf), "css_countdown_text %d \"%s\" \n", uiTriggerTimerLength, pText + sizeof("Console:"));
+		V_snprintf(buf, sizeof(buf), "css_countdown_text %d \"%s\"", uiTriggerTimerLength, pText + sizeof("Console:"));
 		g_pEngineServer2->ServerCommand(buf);
 
 		//now back to the Red Console + Green Say Text
