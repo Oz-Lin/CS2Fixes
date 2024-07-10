@@ -18,27 +18,14 @@
  */
 
 #pragma once
-#include "utils/entity.h"
-#include "playermanager.h"
-#include "gamesystem.h"
-#include "igameevents.h"
 
-struct LeaderColor
+#include "../schema.h"
+#include "cbaseentity.h"
+
+class CEnvHudHint : public CBaseEntity
 {
-	const char* pszColorName;
-	Color clColor;
+public:
+    DECLARE_SCHEMA_CLASS(CEnvHudHint)
+
+    SCHEMA_FIELD(CUtlSymbolLarge, m_iszMessage)
 };
-
-extern LeaderColor LeaderColorMap[];
-extern const size_t g_nLeaderColorMapSize;
-extern CUtlVector<ZEPlayerHandle> g_vecLeaders;
-extern int g_iLeaderIndex;
-
-extern bool g_bEnableLeader;
-
-bool Leader_NoLeaders();
-void Leader_ApplyLeaderVisuals(CCSPlayerPawn *pPawn);
-void Leader_PostEventAbstract_Source1LegacyGameEvent(const uint64 *clients, const CNetMessage *pData);
-void Leader_OnRoundStart(IGameEvent *pEvent);
-void Leader_BulletImpact(IGameEvent *pEvent);
-void Leader_Precache(IEntityResourceManifest *pResourceManifest);
