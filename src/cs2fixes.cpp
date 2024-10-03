@@ -59,6 +59,7 @@
 #include "cs_gameevents.pb.h"
 #include "gameevents.pb.h"
 #include "leader.h"
+#include "usermessages.pb.h"
 
 #include "tier0/memdbgon.h"
 
@@ -612,6 +613,17 @@ void CS2Fixes::Hook_PostEvent(CSplitScreenSlot nSlot, bool bLocalOnly, int nClie
 		if (g_bEnableLeader)
 			Leader_PostEventAbstract_Source1LegacyGameEvent(clients, pData);
 	}
+	else if (info->m_MessageId == UM_Shake)
+	{
+		auto pPBData = const_cast<CNetMessage*>(pData)->ToPB<CUserMessageShake>();
+		if (g_flMaxShakeAmp >= 0 && pPBData->amplitude() > g_flMaxShakeAmp)
+			pPBData->set_amplitude(g_flMaxShakeAmp);
+
+		// remove client with noshake from the event
+		if (g_bEnableNoShake)
+			*(uint64 *)clients &= ~g_playerManager->GetNoShakeMask();
+	}
+	
 }
 
 void CS2Fixes::AllPluginsLoaded()
@@ -743,7 +755,10 @@ void CS2Fixes::Hook_ClientDisconnect( CPlayerSlot slot, ENetworkDisconnectionRea
 	if (!pPlayer)
 		return;
 
-	g_pAdminSystem->AddDisconnectedPlayer(pszName, xuid, pPlayer ? pPlayer->GetIpAddress() : "");
+	// Dont add to c_listdc clients that are downloading MultiAddonManager stuff or were present during a map change
+	if (reason != NETWORK_DISCONNECT_LOOPSHUTDOWN && reason != NETWORK_DISCONNECT_SHUTDOWN)
+		g_pAdminSystem->AddDisconnectedPlayer(pszName, xuid, pPlayer ? pPlayer->GetIpAddress() : "");
+
 	g_playerManager->OnClientDisconnect(slot);
 }
 
