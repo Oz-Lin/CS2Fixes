@@ -53,20 +53,12 @@
 
 #include "tier0/memdbgon.h"
 
-<<<<<<< HEAD
 extern CGlobalVars *gpGlobals;
 extern CGameEntitySystem *g_pEntitySystem;
 extern IGameEventManager2 *g_gameEventManager;
 extern CCSGameRules *g_pGameRules;
 extern CMapVoteSystem *g_pMapVoteSystem;
 extern IVEngineServer2* g_pEngineServer2;
-=======
-extern CGlobalVars* gpGlobals;
-extern CGameEntitySystem* g_pEntitySystem;
-extern IGameEventManager2* g_gameEventManager;
-extern CCSGameRules* g_pGameRules;
-extern CMapVoteSystem* g_pMapVoteSystem;
->>>>>>> cs2f-org/update-workarounds
 extern CUtlVector<CServerSideClient*>* GetClientList();
 
 CUtlVector<CDetourBase*> g_vecDetours;
