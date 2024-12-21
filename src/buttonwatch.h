@@ -18,14 +18,7 @@
  */
 
 #pragma once
+#include "detours.h"
 
-#include "../schema.h"
-#include "cbaseentity.h"
-
-class CEnvHudHint : public CBaseEntity
-{
-public:
-	DECLARE_SCHEMA_CLASS(CEnvHudHint)
-
-	SCHEMA_FIELD(CUtlSymbolLarge, m_iszMessage)
-};
+bool IsButtonWatchEnabled();
+void ButtonWatch(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, const CVariant* value, float flDelay);

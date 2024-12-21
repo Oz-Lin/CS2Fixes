@@ -17,32 +17,32 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <../cs2fixes.h>
-#include "utlstring.h"
 #include "playermanager.h"
 #include "adminsystem.h"
 #include "commands.h"
-#include "map_votes.h"
-#include "user_preferences.h"
-#include "panoramavote.h"
-#include "entity/ccsplayercontroller.h"
-#include "utils/entity.h"
-#include "serversideclient.h"
-#include "recipientfilters.h"
-#include "ctimer.h"
 #include "ctime"
-#include "leader.h"
-#include "tier0/vprof.h"
-#include "networksystem/inetworkmessages.h"
+#include "ctimer.h"
 #include "engine/igameeventsystem.h"
+#include "entity/ccsplayercontroller.h"
+#include "leader.h"
+#include "map_votes.h"
+#include "networksystem/inetworkmessages.h"
+#include "panoramavote.h"
+#include "recipientfilters.h"
+#include "serversideclient.h"
+#include "tier0/vprof.h"
+#include "user_preferences.h"
+#include "utils/entity.h"
+#include "utlstring.h"
+#include <../cs2fixes.h>
 
 #include "tier0/memdbgon.h"
 
-
-extern IVEngineServer2 *g_pEngineServer2;
-extern CGameEntitySystem *g_pEntitySystem;
-extern CGlobalVars *gpGlobals;
+extern IVEngineServer2* g_pEngineServer2;
+extern CGameEntitySystem* g_pEntitySystem;
+extern CGlobalVars* gpGlobals;
 extern IGameEventSystem* g_gameEventSystem;
+extern CUtlVector<CServerSideClient*>* GetClientList();
 
 static int g_iAdminImmunityTargetting = 0;
 static bool g_bEnableMapSteamIds = false;
@@ -50,7 +50,8 @@ static bool g_bEnableMapSteamIds = false;
 FAKE_INT_CVAR(cs2f_admin_immunity, "Mode for which admin immunity system targetting allows: 0 - strictly lower, 1 - equal to or lower, 2 - ignore immunity levels", g_iAdminImmunityTargetting, 0, false)
 FAKE_BOOL_CVAR(cs2f_map_steamids_enable, "Whether to make Steam ID's available to maps", g_bEnableMapSteamIds, false, 0)
 
-ZEPlayerHandle::ZEPlayerHandle() : m_Index(INVALID_ZEPLAYERHANDLE_INDEX) {};
+ZEPlayerHandle::ZEPlayerHandle() :
+	m_Index(INVALID_ZEPLAYERHANDLE_INDEX){};
 
 ZEPlayerHandle::ZEPlayerHandle(CPlayerSlot slot)
 {
@@ -58,27 +59,27 @@ ZEPlayerHandle::ZEPlayerHandle(CPlayerSlot slot)
 	m_Parts.m_Serial = ++iZEPlayerHandleSerial;
 }
 
-ZEPlayerHandle::ZEPlayerHandle(const ZEPlayerHandle &other)
+ZEPlayerHandle::ZEPlayerHandle(const ZEPlayerHandle& other)
 {
 	m_Index = other.m_Index;
 }
 
-ZEPlayerHandle::ZEPlayerHandle(ZEPlayer *pZEPlayer)
+ZEPlayerHandle::ZEPlayerHandle(ZEPlayer* pZEPlayer)
 {
 	Set(pZEPlayer);
 }
 
-bool ZEPlayerHandle::operator==(ZEPlayer *pZEPlayer) const
+bool ZEPlayerHandle::operator==(ZEPlayer* pZEPlayer) const
 {
 	return Get() == pZEPlayer;
 }
 
-bool ZEPlayerHandle::operator!=(ZEPlayer *pZEPlayer) const
+bool ZEPlayerHandle::operator!=(ZEPlayer* pZEPlayer) const
 {
 	return Get() != pZEPlayer;
 }
 
-void ZEPlayerHandle::Set(ZEPlayer *pZEPlayer)
+void ZEPlayerHandle::Set(ZEPlayer* pZEPlayer)
 {
 	if (pZEPlayer)
 		m_Index = pZEPlayer->GetHandle().m_Index;
@@ -86,16 +87,16 @@ void ZEPlayerHandle::Set(ZEPlayer *pZEPlayer)
 		m_Index = INVALID_ZEPLAYERHANDLE_INDEX;
 }
 
-ZEPlayer *ZEPlayerHandle::Get() const
+ZEPlayer* ZEPlayerHandle::Get() const
 {
-	ZEPlayer *pZEPlayer = g_playerManager->GetPlayer((CPlayerSlot) m_Parts.m_PlayerSlot);
+	ZEPlayer* pZEPlayer = g_playerManager->GetPlayer((CPlayerSlot)m_Parts.m_PlayerSlot);
 
 	if (!pZEPlayer)
 		return nullptr;
-	
+
 	if (pZEPlayer->GetHandle().m_Index != m_Index)
 		return nullptr;
-	
+
 	return pZEPlayer;
 }
 
@@ -170,14 +171,18 @@ FAKE_FLOAT_CVAR(cs2f_flashlight_brightness, "How bright should flashlights be", 
 FAKE_FLOAT_CVAR(cs2f_flashlight_distance, "How far flashlights should be from the player's head", g_flFlashLightDistance, 54.0f, false)
 FAKE_COLOR_CVAR(cs2f_flashlight_color, "What color to use for flashlights", g_clrFlashLightColor, false)
 FAKE_STRING_CVAR(cs2f_flashlight_attachment, "Which attachment to parent a flashlight to. "
-	"If the player model is not properly setup, you might have to use clip_limit here instead", g_sFlashLightAttachment, false)
+											 "If the player model is not properly setup, you might have to use clip_limit here instead",
+				 g_sFlashLightAttachment, false)
 
 void ZEPlayer::SpawnFlashLight()
 {
+	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
+	return;
+
 	if (GetFlashLight())
 		return;
 
-	CCSPlayerPawn *pPawn = (CCSPlayerPawn *)CCSPlayerController::FromSlot(GetPlayerSlot())->GetPawn();
+	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)CCSPlayerController::FromSlot(GetPlayerSlot())->GetPawn();
 
 	Vector origin = pPawn->GetAbsOrigin();
 	Vector forward;
@@ -186,7 +191,7 @@ void ZEPlayer::SpawnFlashLight()
 	origin.z += 64.0f;
 	origin += forward * g_flFlashLightDistance;
 
-	CBarnLight *pLight = CreateEntityByName<CBarnLight>("light_barn");
+	CBarnLight* pLight = CreateEntityByName<CBarnLight>("light_barn");
 
 	pLight->m_bEnabled = true;
 	pLight->m_Color->SetColor(g_clrFlashLightColor[0], g_clrFlashLightColor[1], g_clrFlashLightColor[2]);
@@ -202,7 +207,7 @@ void ZEPlayer::SpawnFlashLight()
 	pLight->Teleport(&origin, &pPawn->m_angEyeAngles(), nullptr);
 
 	// Have to use keyvalues for this since the schema prop is a resource handle
-	CEntityKeyValues *pKeyValues = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
 	pKeyValues->SetString("lightcookie", "materials/effects/lightcookies/flashlight.vtex");
 
 	pLight->DispatchSpawn(pKeyValues);
@@ -219,7 +224,7 @@ void ZEPlayer::ToggleFlashLight()
 	CSingleRecipientFilter filter(GetPlayerSlot());
 	CCSPlayerController::FromSlot(GetPlayerSlot())->EmitSoundFilter(filter, "HudChat.Message");
 
-	CBarnLight *pLight = GetFlashLight();
+	CBarnLight* pLight = GetFlashLight();
 
 	// Create a flashlight if we don't have one, and don't bother with the input since it spawns enabled
 	if (!pLight)
@@ -260,7 +265,7 @@ bool ZEPlayer::IsFlooding()
 			m_iFloodTokens++;
 		}
 	}
-	else if(m_iFloodTokens > 0)
+	else if (m_iFloodTokens > 0)
 	{
 		// Remove one flood token when player chats within time limit (slow decay)
 		m_iFloodTokens--;
@@ -275,8 +280,11 @@ void PrecacheBeaconParticle(IEntityResourceManifest* pResourceManifest)
 	pResourceManifest->AddResource(g_sBeaconParticle.c_str());
 }
 
-void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver/* = 0*/)
+void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 {
+	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
+	return;
+
 	SetBeaconColor(color);
 
 	CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(m_slot);
@@ -306,18 +314,17 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver/* = 0*/)
 	int iTeamNum = pPlayer->m_iTeamNum;
 	bool bLeaderBeacon = false;
 
-	ZEPlayer *pGiver = hGiver.Get();
+	ZEPlayer* pGiver = hGiver.Get();
 	if (pGiver && pGiver->IsLeader())
 		bLeaderBeacon = true;
 
-	new CTimer(1.0f, false, false, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]()
-	{
-		CParticleSystem *pParticle = hParticle.Get();
+	new CTimer(1.0f, false, false, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]() {
+		CParticleSystem* pParticle = hParticle.Get();
 
 		if (!hPlayer.IsValid() || !pParticle)
 			return -1.0f;
 
-		CCSPlayerController *pPlayer = CCSPlayerController::FromSlot((CPlayerSlot) hPlayer.GetPlayerSlot());
+		CCSPlayerController* pPlayer = CCSPlayerController::FromSlot((CPlayerSlot)hPlayer.GetPlayerSlot());
 
 		if (pPlayer->m_iTeamNum < CS_TEAM_T || !pPlayer->m_hPlayerPawn->IsAlive() || pPlayer->m_iTeamNum != iTeamNum)
 		{
@@ -328,7 +335,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver/* = 0*/)
 		if (!bLeaderBeacon)
 			return 1.0f;
 
-		ZEPlayer *pBeaconGiver = hGiver.Get();
+		ZEPlayer* pBeaconGiver = hGiver.Get();
 
 		// Continue beacon, leader is not on the server. No reason to remove the beacon
 		if (!pBeaconGiver)
@@ -349,7 +356,7 @@ void ZEPlayer::EndBeacon()
 {
 	SetBeaconColor(Color(0, 0, 0, 0));
 
-	CParticleSystem *pParticle = m_hBeaconParticle.Get();
+	CParticleSystem* pParticle = m_hBeaconParticle.Get();
 
 	if (pParticle)
 		addresses::UTIL_Remove(pParticle);
@@ -359,12 +366,15 @@ void ZEPlayer::EndBeacon()
 // iDuration being non-positive only kills off active marks.
 void ZEPlayer::CreateMark(float fDuration, Vector vecOrigin)
 {
+	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
+	return;
+
 	if (m_handleMark && m_handleMark.IsValid())
 	{
 		UTIL_AddEntityIOEvent(m_handleMark.Get(), "DestroyImmediately", nullptr, nullptr, "", 0);
 		UTIL_AddEntityIOEvent(m_handleMark.Get(), "Kill", nullptr, nullptr, "", 0.02f);
 	}
-		
+
 	if (fDuration <= 0)
 		return;
 
@@ -390,17 +400,15 @@ int ZEPlayer::GetLeaderVoteCount()
 	int iValidVoteCount = 0;
 
 	for (int i = m_vecLeaderVotes.Count() - 1; i >= 0; i--)
-	{
 		if (m_vecLeaderVotes[i].IsValid())
 			iValidVoteCount++;
 		else
 			m_vecLeaderVotes.Remove(i);
-	}
 
 	return iValidVoteCount;
 }
 
-bool ZEPlayer::HasPlayerVotedLeader(ZEPlayer *pPlayer)
+bool ZEPlayer::HasPlayerVotedLeader(ZEPlayer* pPlayer)
 {
 	FOR_EACH_VEC(m_vecLeaderVotes, i)
 	{
@@ -423,21 +431,24 @@ void ZEPlayer::PurgeLeaderVotes()
 
 void ZEPlayer::StartGlow(Color color, int duration)
 {
+	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
+	return;
+
 	SetGlowColor(color);
-	CCSPlayerController *pController = CCSPlayerController::FromSlot(m_slot);
-	CCSPlayerPawn *pPawn = (CCSPlayerPawn*)pController->GetPawn();
-	
-	const char *pszModelName = pPawn->GetModelName();
-	
-	CBaseModelEntity *pModelGlow = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
-	CBaseModelEntity *pModelRelay = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
-	CEntityKeyValues *pKeyValuesRelay = new CEntityKeyValues();
-	
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(m_slot);
+	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();
+
+	const char* pszModelName = pPawn->GetModelName();
+
+	CBaseModelEntity* pModelGlow = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
+	CBaseModelEntity* pModelRelay = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
+	CEntityKeyValues* pKeyValuesRelay = new CEntityKeyValues();
+
 	pKeyValuesRelay->SetString("model", pszModelName);
 	pKeyValuesRelay->SetInt64("spawnflags", 256U);
 	pKeyValuesRelay->SetInt("rendermode", kRenderNone);
 
-	CEntityKeyValues *pKeyValuesGlow = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValuesGlow = new CEntityKeyValues();
 	pKeyValuesGlow->SetString("model", pszModelName);
 	pKeyValuesGlow->SetInt64("spawnflags", 256U);
 	pKeyValuesGlow->SetColor("glowcolor", color);
@@ -452,32 +463,31 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	pModelGlow->AcceptInput("FollowEntity", "!activator", pModelRelay);
 
 	m_hGlowModel.Set(pModelGlow);
-	
+
 	CHandle<CBaseModelEntity> hGlowModel = m_hGlowModel;
 	CHandle<CCSPlayerPawn> hPawn = pPawn->GetHandle();
 	int iTeamNum = hPawn->m_iTeamNum();
 
 	// check if player's team or model changed
-	new CTimer(0.5f, false, false, [hGlowModel, hPawn, iTeamNum]()
-	{
-		CBaseModelEntity *pModel = hGlowModel.Get();
-		CCSPlayerPawn *pawn = hPawn.Get();
+	new CTimer(0.5f, false, false, [hGlowModel, hPawn, iTeamNum]() {
+		CBaseModelEntity* pModel = hGlowModel.Get();
+		CCSPlayerPawn* pawn = hPawn.Get();
 
 		if (!pawn || !pModel)
 			return -1.0f;
 
 		if (pawn->m_iTeamNum != iTeamNum || strcmp(pModel->GetModelName(), pawn->GetModelName()))
 		{
-			CGameSceneNode *pParentSceneNode = pModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
+			CGameSceneNode* pParentSceneNode = pModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
 
 			if (!pParentSceneNode)
 				return -1.0f;
 
-			CBaseModelEntity *pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
+			CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 			if (pModelParent)
 				addresses::UTIL_Remove(pModelParent);
-			
+
 			return -1.0f;
 		}
 
@@ -487,20 +497,19 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	// kill glow after duration, if provided
 	if (duration < 1)
 		return;
-	
-	new CTimer((float)duration, false, false, [hGlowModel]()
-	{
-		CBaseModelEntity *pModel = hGlowModel.Get();
+
+	new CTimer((float)duration, false, false, [hGlowModel]() {
+		CBaseModelEntity* pModel = hGlowModel.Get();
 
 		if (!pModel)
 			return -1.0f;
 
-		CGameSceneNode *pParentSceneNode = pModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
+		CGameSceneNode* pParentSceneNode = pModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
 
 		if (!pParentSceneNode)
 			return -1.0f;
 
-		CBaseModelEntity *pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
+		CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 		if (pModelParent)
 			addresses::UTIL_Remove(pModelParent);
@@ -513,20 +522,37 @@ void ZEPlayer::EndGlow()
 {
 	SetGlowColor(Color(0, 0, 0, 0));
 
-	CBaseModelEntity *pGlowModel = m_hGlowModel.Get();
+	CBaseModelEntity* pGlowModel = m_hGlowModel.Get();
 
 	if (!pGlowModel)
 		return;
 
-	CGameSceneNode *pParentSceneNode = pGlowModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
+	CGameSceneNode* pParentSceneNode = pGlowModel->m_CBodyComponent()->m_pSceneNode()->m_pParent();
 
 	if (!pParentSceneNode)
 		return;
 
-	CBaseModelEntity *pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
+	CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 	if (pModelParent)
 		addresses::UTIL_Remove(pModelParent);
+}
+
+void ZEPlayer::CycleButtonWatch()
+{
+	m_iButtonWatchMode = (m_iButtonWatchMode + 1) % 4;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), BUTTON_WATCH_PREF_KEY_NAME, m_iButtonWatchMode);
+}
+
+// 0: Off
+// 1: Chat
+// 2: Console
+// 3: Chat + Console
+int ZEPlayer::GetButtonWatchMode()
+{
+	if (!IsAdminFlagSet(ADMFLAG_GENERIC) || IsFakeClient())
+		return 0;
+	return g_pUserPreferencesSystem->GetPreferenceInt(m_slot.Get(), BUTTON_WATCH_PREF_KEY_NAME, m_iButtonWatchMode);
 }
 
 void ZEPlayer::SetSteamIdAttribute()
@@ -576,7 +602,7 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 
 	Message("%d connected\n", slot.Get());
 
-	ZEPlayer *pPlayer = new ZEPlayer(slot);
+	ZEPlayer* pPlayer = new ZEPlayer(slot);
 	pPlayer->SetUnauthenticatedSteamId(new CSteamID(xuid));
 
 	std::string ip(pszNetworkID);
@@ -610,7 +636,8 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 	ResetPlayerFlags(slot.Get());
 
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
-	
+	g_pMapVoteSystem->ClearInvalidNominations();
+
 	return true;
 }
 
@@ -627,6 +654,7 @@ void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 	ResetPlayerFlags(slot.Get());
 
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
+	g_pMapVoteSystem->ClearInvalidNominations();
 
 	g_pPanoramaVoteHandler->RemovePlayerFromVote(slot.Get());
 }
@@ -659,20 +687,20 @@ void CPlayerManager::OnSteamAPIActivated()
 int g_iDelayAuthFailKick = 0;
 FAKE_INT_CVAR(cs2f_delay_auth_fail_kick, "How long in seconds to delay kicking players when their Steam authentication fails, use with sv_steamauth_enforce 0", g_iDelayAuthFailKick, 0, false);
 
-void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t *pResponse)
+void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t* pResponse)
 {
 	uint64 iSteamId = pResponse->m_SteamID.ConvertToUint64();
 
 	Message("%s: SteamID=%llu Response=%d\n", __func__, iSteamId, pResponse->m_eAuthSessionResponse);
 
-	ZEPlayer *pPlayer = nullptr;
+	ZEPlayer* pPlayer = nullptr;
 
-	for (ZEPlayer *pPlayer : m_vecPlayers)
+	for (ZEPlayer* pPlayer : m_vecPlayers)
 	{
 		if (!pPlayer || pPlayer->IsFakeClient() || !(pPlayer->GetUnauthenticatedSteamId64() == iSteamId))
 			continue;
 
-		CCSPlayerController *pController = CCSPlayerController::FromSlot(pPlayer->GetPlayerSlot());
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(pPlayer->GetPlayerSlot());
 
 		switch (pResponse->m_eAuthSessionResponse)
 		{
@@ -701,8 +729,7 @@ void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t *pRespons
 				ClientPrint(pController, HUD_PRINTTALK, " \7WARNING: You will be kicked in %i seconds due to failed Steam authentication.\n", g_iDelayAuthFailKick);
 
 				ZEPlayerHandle hPlayer = pPlayer->GetHandle();
-				new CTimer(g_iDelayAuthFailKick, true, true, [hPlayer]()
-				{
+				new CTimer(g_iDelayAuthFailKick, true, true, [hPlayer]() {
 					if (!hPlayer.IsValid())
 						return -1.f;
 
@@ -740,12 +767,12 @@ void CPlayerManager::FlashLightThink()
 
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
-		CCSPlayerController *pPlayer = CCSPlayerController::FromSlot(i);
+		CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(i);
 
 		if (!pPlayer || !pPlayer->m_bPawnIsAlive())
 			continue;
 
-		uint64 *pButtons = pPlayer->GetPawn()->m_pMovementServices->m_nButtons().m_pButtonStates();
+		uint64* pButtons = pPlayer->GetPawn()->m_pMovementServices->m_nButtons().m_pButtonStates();
 
 		// Check both to make sure flashlight is only toggled when the player presses the key
 		if ((pButtons[0] & IN_LOOK_AT_WEAPON) && (pButtons[1] & IN_LOOK_AT_WEAPON))
@@ -803,26 +830,23 @@ void CPlayerManager::CheckHideDistances()
 
 				// TODO: Unhide dead pawns if/when valve fixes the crash
 				if (pTargetPawn && (!g_bHideTeammatesOnly || pTargetController->m_iTeamNum == team))
-				{
 					player->SetTransmit(j, pTargetPawn->GetAbsOrigin().DistToSqr(vecPosition) <= hideDistance * hideDistance);
-				}
 			}
 		}
 	}
 }
 
-static const char *g_szPlayerStates[] =
-{
-	"STATE_ACTIVE",
-	"STATE_WELCOME",
-	"STATE_PICKINGTEAM",
-	"STATE_PICKINGCLASS",
-	"STATE_DEATH_ANIM",
-	"STATE_DEATH_WAIT_FOR_KEY",
-	"STATE_OBSERVER_MODE",
-	"STATE_GUNGAME_RESPAWN",
-	"STATE_DORMANT"
-};
+static const char* g_szPlayerStates[] =
+	{
+		"STATE_ACTIVE",
+		"STATE_WELCOME",
+		"STATE_PICKINGTEAM",
+		"STATE_PICKINGCLASS",
+		"STATE_DEATH_ANIM",
+		"STATE_DEATH_WAIT_FOR_KEY",
+		"STATE_OBSERVER_MODE",
+		"STATE_GUNGAME_RESPAWN",
+		"STATE_DORMANT"};
 
 extern bool g_bEnableHide;
 
@@ -830,12 +854,12 @@ void CPlayerManager::UpdatePlayerStates()
 {
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
-		ZEPlayer *pPlayer = GetPlayer(i);
+		ZEPlayer* pPlayer = GetPlayer(i);
 
 		if (!pPlayer)
 			continue;
 
-		CCSPlayerController *pController = CCSPlayerController::FromSlot(i);
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
 
 		if (!pController)
 			continue;
@@ -853,7 +877,7 @@ void CPlayerManager::UpdatePlayerStates()
 			// Send full update to people going in/out of spec as a mitigation for hide crashes
 			if (g_bEnableHide && (iCurrentPlayerState == STATE_OBSERVER_MODE || iPreviousPlayerState == STATE_OBSERVER_MODE))
 			{
-				CServerSideClient *pClient = GetClientBySlot(i);
+				CServerSideClient* pClient = GetClientBySlot(i);
 
 				if (pClient)
 					pClient->ForceFullUpdate();
@@ -867,8 +891,7 @@ FAKE_BOOL_CVAR(cs2f_infinite_reserve_ammo, "Whether to enable infinite reserve a
 
 void CPlayerManager::SetupInfiniteAmmo()
 {
-	new CTimer(5.0f, false, true, []()
-	{
+	new CTimer(5.0f, false, true, []() {
 		if (!g_bInfiniteAmmo)
 			return 5.0f;
 
@@ -888,7 +911,7 @@ void CPlayerManager::SetupInfiniteAmmo()
 
 			CCSPlayer_WeaponServices* pWeaponServices = pPawn->m_pWeaponServices;
 
-			// it can sometimes be null when player joined on the very first round? 
+			// it can sometimes be null when player joined on the very first round?
 			if (!pWeaponServices)
 				continue;
 
@@ -946,8 +969,8 @@ ETargetError GetTargetError(CCSPlayerController* pPlayer, CCSPlayerController* p
 	else if (iBlockedFlags & NO_UNAUTHENTICATED && !zpTarget->IsAuthenticated())
 		return ETargetError::UNAUTHENTICATED;
 	else if (zpPlayer && !(iBlockedFlags & NO_IMMUNITY)
-			  && ((g_iAdminImmunityTargetting == 0 && zpTarget->GetAdminImmunity() > zpPlayer->GetAdminImmunity())
-				  || (g_iAdminImmunityTargetting == 1 && zpTarget->GetAdminImmunity() <= zpPlayer->GetAdminImmunity() && pTarget != pPlayer)))
+			 && ((g_iAdminImmunityTargetting == 0 && zpTarget->GetAdminImmunity() > zpPlayer->GetAdminImmunity())
+				 || (g_iAdminImmunityTargetting == 1 && zpTarget->GetAdminImmunity() <= zpPlayer->GetAdminImmunity() && pTarget != pPlayer)))
 		return ETargetError::INSUFFICIENT_IMMUNITY_LEVEL;
 
 	return ETargetError::NO_ERRORS;
@@ -962,7 +985,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	bool bTargetMultiple = false;
 	bool bTargetRandom = false;
 	uint64 iInverseFlags = NO_TARGET_BLOCKS;
-	
+
 	if (!V_stricmp(pszTarget, "@me"))
 	{
 		nType = ETargetType::SELF;
@@ -1002,7 +1025,6 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 
 		bTargetMultiple = true;
 		iBlockedFlags |= NO_COUNTER_TERRORIST | NO_SPECTATOR;
-
 	}
 	else if (!V_stricmp(pszTarget, "@!t"))
 	{
@@ -1035,7 +1057,6 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 
 		bTargetMultiple = true;
 		iBlockedFlags |= NO_COUNTER_TERRORIST;
-
 	}
 	else if (!V_stricmp(pszTarget, "@spec"))
 	{
@@ -1082,7 +1103,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	else if (!V_stricmp(pszTarget, "@randomt"))
 	{
 		nType = ETargetType::RANDOM_T;
-		
+
 		if (iBlockedFlags & NO_TERRORIST)
 			return ETargetError::TERRORIST;
 		else if (iBlockedFlags & NO_RANDOM)
@@ -1094,7 +1115,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	else if (!V_stricmp(pszTarget, "@!randomt"))
 	{
 		nType = ETargetType::ALL_BUT_RANDOM_T;
-		
+
 		if (iBlockedFlags & NO_RANDOM)
 			return ETargetError::RANDOM;
 
@@ -1103,7 +1124,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	else if (!V_stricmp(pszTarget, "@randomct"))
 	{
 		nType = ETargetType::RANDOM_CT;
-		
+
 		if (iBlockedFlags & NO_COUNTER_TERRORIST)
 			return ETargetError::COUNTER_TERRORIST;
 		else if (iBlockedFlags & NO_RANDOM)
@@ -1115,7 +1136,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 	else if (!V_stricmp(pszTarget, "@!randomct"))
 	{
 		nType = ETargetType::RANDOM_CT;
-		
+
 		if (iBlockedFlags & NO_RANDOM)
 			return ETargetError::RANDOM;
 
@@ -1155,7 +1176,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 
 		bTargetMultiple = true;
 		iBlockedFlags |= NO_ALIVE;
-	}		
+	}
 	else if (!V_stricmp(pszTarget, "@alive") || !V_stricmp(pszTarget, "@!dead"))
 	{
 		nType = ETargetType::ALIVE;
@@ -1192,7 +1213,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 		bTargetMultiple = true;
 		iBlockedFlags |= NO_BOT;
 	}
-	
+
 	// We have setup what we need and given custom errors if needed for group targetting.
 	// Now we actually get the target(s).
 	if (nType == ETargetType::SELF)
@@ -1285,7 +1306,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 		CBaseEntity* entTarget = nullptr;
 		entTarget = UTIL_FindPickerEntity(pPlayer);
 
-		if (!entTarget->IsPawn())
+		if (!entTarget || !entTarget->IsPawn())
 			return ETargetError::INVALID;
 
 		CCSPlayerController* pTarget = CCSPlayerController::FromPawn(static_cast<CCSPlayerPawn*>(entTarget));
@@ -1486,7 +1507,7 @@ bool CPlayerManager::CanTargetPlayers(CCSPlayerController* pPlayer, const char* 
 	return CanTargetPlayers(pPlayer, pszTarget, iNumClients, rgiClients, iBlockedFlags, nUselessVariable);
 }
 
-ZEPlayer *CPlayerManager::GetPlayer(CPlayerSlot slot)
+ZEPlayer* CPlayerManager::GetPlayer(CPlayerSlot slot)
 {
 	if (slot.Get() < 0 || slot.Get() >= gpGlobals->maxClients)
 		return nullptr;
@@ -1500,7 +1521,7 @@ CPlayerSlot CPlayerManager::GetSlotFromUserId(uint16 userid)
 	return CPlayerSlot(userid & 0xFF);
 }
 
-ZEPlayer *CPlayerManager::GetPlayerFromUserId(uint16 userid)
+ZEPlayer* CPlayerManager::GetPlayerFromUserId(uint16 userid)
 {
 	uint8 index = userid & 0xFF;
 
@@ -1513,10 +1534,8 @@ ZEPlayer *CPlayerManager::GetPlayerFromUserId(uint16 userid)
 ZEPlayer* CPlayerManager::GetPlayerFromSteamId(uint64 steamid)
 {
 	for (ZEPlayer* player : m_vecPlayers)
-	{
 		if (player && player->IsAuthenticated() && player->GetSteamId64() == steamid)
 			return player;
-	}
 
 	return nullptr;
 }
@@ -1533,8 +1552,8 @@ void CPlayerManager::SetPlayerStopSound(int slot, bool set)
 	if (!pPlayer) return;
 
 	uint64 iSlotMask = (uint64)1 << slot;
-	int iStopPreferenceStatus = (m_nUsingStopSound & iSlotMask)?1:0;
-	int iSilencePreferenceStatus = (m_nUsingSilenceSound & iSlotMask)?2:0;
+	int iStopPreferenceStatus = (m_nUsingStopSound & iSlotMask) ? 1 : 0;
+	int iSilencePreferenceStatus = (m_nUsingSilenceSound & iSlotMask) ? 2 : 0;
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, SOUND_STATUS_PREF_KEY_NAME, iStopPreferenceStatus + iSilencePreferenceStatus);
 }
 
@@ -1550,8 +1569,8 @@ void CPlayerManager::SetPlayerSilenceSound(int slot, bool set)
 	if (!pPlayer) return;
 
 	uint64 iSlotMask = (uint64)1 << slot;
-	int iStopPreferenceStatus = (m_nUsingStopSound & iSlotMask)?1:0;
-	int iSilencePreferenceStatus = (m_nUsingSilenceSound & iSlotMask)?2:0;
+	int iStopPreferenceStatus = (m_nUsingStopSound & iSlotMask) ? 1 : 0;
+	int iSilencePreferenceStatus = (m_nUsingSilenceSound & iSlotMask) ? 2 : 0;
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, SOUND_STATUS_PREF_KEY_NAME, iStopPreferenceStatus + iSilencePreferenceStatus);
 }
 
@@ -1567,7 +1586,7 @@ void CPlayerManager::SetPlayerStopDecals(int slot, bool set)
 	if (!pPlayer) return;
 
 	uint64 iSlotMask = (uint64)1 << slot;
-	int iDecalPreferenceStatus = (m_nUsingStopDecals & iSlotMask)?1:0;
+	int iDecalPreferenceStatus = (m_nUsingStopDecals & iSlotMask) ? 1 : 0;
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, DECAL_PREF_KEY_NAME, iDecalPreferenceStatus);
 }
 
@@ -1583,7 +1602,7 @@ void CPlayerManager::SetPlayerNoShake(int slot, bool set)
 	if (!pPlayer) return;
 
 	uint64 iSlotMask = (uint64)1 << slot;
-	int iNoShakePreferenceStatus = (m_nUsingNoShake & iSlotMask)?1:0;
+	int iNoShakePreferenceStatus = (m_nUsingNoShake & iSlotMask) ? 1 : 0;
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, NO_SHAKE_PREF_KEY_NAME, iNoShakePreferenceStatus);
 }
 
@@ -1593,4 +1612,19 @@ void CPlayerManager::ResetPlayerFlags(int slot)
 	SetPlayerSilenceSound(slot, false);
 	SetPlayerStopDecals(slot, true);
 	SetPlayerNoShake(slot, false);
+}
+
+int CPlayerManager::GetOnlinePlayerCount(bool bCountBots)
+{
+	int iOnlinePlayers = 0;
+
+	for (int i = 0; i < GetClientList()->Count(); i++)
+	{
+		CServerSideClient* pClient = (*GetClientList())[i];
+
+		if (pClient && pClient->GetSignonState() >= SIGNONSTATE_CONNECTED && (bCountBots || !pClient->IsFakeClient()))
+			iOnlinePlayers++;
+	}
+
+	return iOnlinePlayers;
 }
