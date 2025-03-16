@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2024 Source2ZE
+ * Copyright (C) 2023-2025 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -17,33 +17,36 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "common.h"
 #include "KeyValues.h"
 #include "commands.h"
+#include "common.h"
 #include "ctimer.h"
 #include "entities.h"
-#include "eventlistener.h"
-#include "networkstringtabledefs.h"
 #include "entity/cbaseplayercontroller.h"
 #include "entity/cgamerules.h"
-#include "zombiereborn.h"
-#include "votemanager.h"
+#include "entwatch.h"
+#include "eventlistener.h"
+#include "idlemanager.h"
 #include "leader.h"
-#include "recipientfilters.h"
+#include "map_votes.h"
+#include "networkstringtabledefs.h"
 #include "panoramavote.h"
+#include "recipientfilters.h"
+#include "votemanager.h"
+#include "zombiereborn.h"
 
 #include "tier0/memdbgon.h"
 
-extern IGameEventManager2 *g_gameEventManager;
-extern IServerGameClients *g_pSource2GameClients;
-extern CGameEntitySystem *g_pEntitySystem;
-extern CGlobalVars *gpGlobals;
-extern CCSGameRules *g_pGameRules;
+extern IGameEventManager2* g_gameEventManager;
+extern IServerGameClients* g_pSource2GameClients;
+extern CGameEntitySystem* g_pEntitySystem;
+extern CGlobalVars* GetGlobals();
+extern CCSGameRules* g_pGameRules;
 extern IVEngineServer2* g_pEngineServer2;
 
 extern int g_iRoundNum;
 
-CUtlVector<CGameEventListener *> g_vecEventListeners;
+CUtlVector<CGameEventListener*> g_vecEventListeners;
 
 void RegisterEventListeners()
 {
@@ -84,7 +87,7 @@ GAME_EVENT_F(round_prestart)
 
 	if (g_bPurgeEntityNames)
 	{
-		INetworkStringTable *pEntityNames = g_pNetworkStringTableServer->FindTable("EntityNames");
+		INetworkStringTable* pEntityNames = g_pNetworkStringTableServer->FindTable("EntityNames");
 
 		if (pEntityNames)
 		{
@@ -95,9 +98,9 @@ GAME_EVENT_F(round_prestart)
 
 			// Vauff: Not fixing cubemap fog in my testing
 			// This also breaks round start particle resets, so disabling for now
-			//pEntityNames->SetTick(-1, nullptr);
+			// pEntityNames->SetTick(-1, nullptr);
 
-			//FullUpdateAllClients();
+			// FullUpdateAllClients();
 		}
 	}
 
@@ -111,6 +114,9 @@ GAME_EVENT_F(round_prestart)
 
 	if (g_bEnableZR)
 		ZR_OnRoundPrestart(pEvent);
+
+	if (g_bEnableEntWatch)
+		EW_RoundPreStart();
 }
 
 static bool g_bBlockTeamMessages = false;
@@ -130,7 +136,7 @@ FAKE_BOOL_CVAR(cs2f_noblock_enable, "Whether to use player noblock, which sets d
 
 GAME_EVENT_F(player_spawn)
 {
-	CCSPlayerController *pController = (CCSPlayerController *)pEvent->GetPlayerController("userid");
+	CCSPlayerController* pController = (CCSPlayerController*)pEvent->GetPlayerController("userid");
 
 	if (!pController)
 		return;
@@ -150,9 +156,8 @@ GAME_EVENT_F(player_spawn)
 	CHandle<CCSPlayerController> hController = pController->GetHandle();
 
 	// Gotta do this on the next frame...
-	new CTimer(0.0f, false, false, [hController]()
-	{
-		CCSPlayerController *pController = hController.Get();
+	new CTimer(0.0f, false, false, [hController]() {
+		CCSPlayerController* pController = hController.Get();
 
 		if (!pController)
 			return -1.0f;
@@ -163,13 +168,32 @@ GAME_EVENT_F(player_spawn)
 		if (!pController->m_bPawnIsAlive())
 			return -1.0f;
 
-		CBasePlayerPawn *pPawn = pController->GetPawn();
+		CBasePlayerPawn* pPawn = pController->GetPawn();
 
 		// Just in case somehow there's health but the player is, say, an observer
 		if (!g_bNoblock || !pPawn || !pPawn->IsAlive())
 			return -1.0f;
 
 		pPawn->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
+
+		return -1.0f;
+	});
+
+	// And this needs even more delay..? Don't even know if this is enough, bug can't be reproduced
+	new CTimer(0.1f, false, false, [hController]() {
+		CCSPlayerController* pController = hController.Get();
+
+		if (!pController)
+			return -1.0f;
+
+		CBasePlayerPawn* pPawn = pController->GetPawn();
+
+		if (pPawn)
+		{
+			// Fix new haunted CS2 bug? https://www.reddit.com/r/cs2/comments/1glvg9s/thank_you_for_choosing_anubis_airlines/
+			// We've seen this several times across different maps at this point
+			pPawn->m_vecAbsVelocity = Vector(0, 0, 0);
+		}
 
 		return -1.0f;
 	});
@@ -187,8 +211,8 @@ GAME_EVENT_F(player_hurt)
 	if (!g_bEnableTopDefender)
 		return;
 
-	CCSPlayerController *pAttacker = (CCSPlayerController*)pEvent->GetPlayerController("attacker");
-	CCSPlayerController *pVictim = (CCSPlayerController*)pEvent->GetPlayerController("userid");
+	CCSPlayerController* pAttacker = (CCSPlayerController*)pEvent->GetPlayerController("attacker");
+	CCSPlayerController* pVictim = (CCSPlayerController*)pEvent->GetPlayerController("userid");
 
 	// Ignore Ts/zombies and CTs hurting themselves
 	if (!pAttacker || pAttacker->m_iTeamNum() != CS_TEAM_CT || pAttacker->m_iTeamNum() == pVictim->m_iTeamNum())
@@ -208,13 +232,16 @@ GAME_EVENT_F(player_death)
 	if (g_bEnableZR)
 		ZR_OnPlayerDeath(pEvent);
 
+	if (g_bEnableEntWatch)
+		EW_PlayerDeath(pEvent);
+
 	if (!g_bEnableTopDefender)
 		return;
 
-	CCSPlayerController *pAttacker = (CCSPlayerController*)pEvent->GetPlayerController("attacker");
-	CCSPlayerController *pVictim = (CCSPlayerController*)pEvent->GetPlayerController("userid");
-	
-	//Ignore Ts/zombie kills and ignore CT teamkilling or suicide
+	CCSPlayerController* pAttacker = (CCSPlayerController*)pEvent->GetPlayerController("attacker");
+	CCSPlayerController* pVictim = (CCSPlayerController*)pEvent->GetPlayerController("userid");
+
+	// Ignore Ts/zombie kills and ignore CT teamkilling or suicide
 	if (!pAttacker || !pVictim || pAttacker->m_iTeamNum != CS_TEAM_CT || pAttacker->m_iTeamNum == pVictim->m_iTeamNum)
 		return;
 
@@ -243,10 +270,10 @@ GAME_EVENT_F(round_start)
 	if (g_bFullAllTalk)
 		g_pEngineServer2->ServerCommand("sv_full_alltalk 1");
 
-	if (!g_bEnableTopDefender)
+	if (!g_bEnableTopDefender || !GetGlobals())
 		return;
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
 
@@ -262,29 +289,14 @@ GAME_EVENT_F(round_start)
 GAME_EVENT_F(round_end)
 {
 	if (g_bVoteManagerEnable)
-	{
-		ConVar* cvar = g_pCVar->GetConVar(g_pCVar->FindConVar("mp_timelimit"));
+		g_pVoteManager->OnRoundEnd();
 
-		// CONVAR_TODO
-		// HACK: values is actually the cvar value itself, hence this ugly cast.
-		float flTimelimit = *(float *)&cvar->values;
-
-		int iTimeleft = (int) ((g_pGameRules->m_flGameStartTime + flTimelimit * 60.0f) - gpGlobals->curtime);
-
-		// check for end of last round
-		if (iTimeleft <= 0)
-		{
-			g_RTVState = ERTVState::POST_LAST_ROUND_END;
-			g_ExtendState = EExtendState::POST_LAST_ROUND_END;
-		}
-	}
-
-	if (!g_bEnableTopDefender)
+	if (!g_bEnableTopDefender || !GetGlobals())
 		return;
 
-	CUtlVector<ZEPlayer *> sortedPlayers;
+	CUtlVector<ZEPlayer*> sortedPlayers;
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
 
@@ -293,7 +305,7 @@ GAME_EVENT_F(round_end)
 
 		CCSPlayerController* pController = CCSPlayerController::FromSlot(pPlayer->GetPlayerSlot());
 
-		if(!pController)
+		if (!pController)
 			continue;
 
 		sortedPlayers.AddToTail(pPlayer);
@@ -302,14 +314,13 @@ GAME_EVENT_F(round_end)
 	if (sortedPlayers.Count() == 0)
 		return;
 
-	sortedPlayers.Sort([](ZEPlayer *const *a, ZEPlayer *const *b) -> int
-	{
+	sortedPlayers.Sort([](ZEPlayer* const* a, ZEPlayer* const* b) -> int {
 		return (*a)->GetTotalDamage() < (*b)->GetTotalDamage();
 	});
 
 	ClientPrintAll(HUD_PRINTTALK, " \x09TOP DEFENDERS");
 
-	char colorMap[] = { '\x10', '\x08', '\x09', '\x0B'};
+	char colorMap[] = {'\x10', '\x08', '\x09', '\x0B'};
 
 	for (int i = 0; i < sortedPlayers.Count(); i++)
 	{
@@ -320,7 +331,7 @@ GAME_EVENT_F(round_end)
 			ClientPrintAll(HUD_PRINTTALK, " %c%i. %s \x01- \x07%i DMG \x05(%i HITS & %i KILLS)", colorMap[MIN(i, 3)], i + 1, pController->GetPlayerName(), pPlayer->GetTotalDamage(), pPlayer->GetTotalHits(), pPlayer->GetTotalKills());
 		else
 			ClientPrint(pController, HUD_PRINTTALK, " \x0C%i. %s \x01- \x07%i DMG \x05(%i HITS & %i KILLS)", i + 1, pController->GetPlayerName(), pPlayer->GetTotalDamage(), pPlayer->GetTotalHits(), pPlayer->GetTotalKills());
-		
+
 		pPlayer->SetTotalDamage(0);
 		pPlayer->SetTotalHits(0);
 		pPlayer->SetTotalKills(0);
@@ -348,4 +359,12 @@ GAME_EVENT_F(bullet_impact)
 GAME_EVENT_F(vote_cast)
 {
 	g_pPanoramaVoteHandler->VoteCast(pEvent);
+}
+
+GAME_EVENT_F(cs_win_panel_match)
+{
+	g_pIdleSystem->PauseIdleChecks();
+
+	if (!g_pMapVoteSystem->IsVoteOngoing())
+		g_pMapVoteSystem->StartVote();
 }

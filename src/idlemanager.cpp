@@ -1,28 +1,28 @@
 /**
-* =============================================================================
-* CS2Fixes
-* Copyright (C) 2023-2024 Source2ZE
-* =============================================================================
-*
-* This program is free software; you can redistribute it and/or modify it under
-* the terms of the GNU General Public License, version 3.0, as published by the
-* Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-* FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-* details.
-*
-* You should have received a copy of the GNU General Public License along with
-* this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * =============================================================================
+ * CS2Fixes
+ * Copyright (C) 2023-2025 Source2ZE
+ * =============================================================================
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License, version 3.0, as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "idlemanager.h"
 #include "commands.h"
 #include <vprof.h>
 
-extern IVEngineServer2 *g_pEngineServer2;
-extern CGlobalVars *gpGlobals;
+extern IVEngineServer2* g_pEngineServer2;
+extern CGlobalVars* GetGlobals();
 extern CPlayerManager* g_playerManager;
 
 CIdleSystem* g_pIdleSystem = nullptr;
@@ -37,11 +37,11 @@ FAKE_BOOL_CVAR(cs2f_idle_kick_admins, "Whether to kick idle players with ADMFLAG
 
 void CIdleSystem::CheckForIdleClients()
 {
-	if (m_bPaused || g_fIdleKickTime <= 0.0f)
+	if (m_bPaused || g_fIdleKickTime <= 0.0f || !GetGlobals())
 		return;
 
 	int iClientNum = 0;
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* zPlayer = g_playerManager->GetPlayer(i);
 
@@ -51,7 +51,7 @@ void CIdleSystem::CheckForIdleClients()
 		iClientNum++;
 	}
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* zPlayer = g_playerManager->GetPlayer(i);
 
@@ -81,19 +81,19 @@ void CIdleSystem::CheckForIdleClients()
 		if (iClientNum < g_iMinClientsForIdleKicks)
 			continue;
 
-		g_pEngineServer2->DisconnectClient(zPlayer->GetPlayerSlot(), NETWORK_DISCONNECT_KICKED_IDLE);
+		g_pEngineServer2->DisconnectClient(zPlayer->GetPlayerSlot(), NETWORK_DISCONNECT_KICKED_IDLE, "Auto kicked for being idle");
 	}
 }
 
 // Logged inputs and time for the logged inputs are updated every time this function is run.
 void CIdleSystem::UpdateIdleTimes()
 {
-	if (g_fIdleKickTime <= 0.0f)
+	if (g_fIdleKickTime <= 0.0f || !GetGlobals())
 		return;
 
 	VPROF("CIdleSystem::UpdateIdleTimes");
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
 
@@ -129,7 +129,10 @@ void CIdleSystem::Reset()
 {
 	m_bPaused = false;
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	if (!GetGlobals())
+		return;
+
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
 
