@@ -173,9 +173,6 @@ CConVar<CUtlString> g_cvarFlashLightAttachment("cs2f_flashlight_attachment", FCV
 
 void ZEPlayer::SpawnFlashLight()
 {
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	return;
-
 	if (GetFlashLight())
 		return;
 
@@ -275,9 +272,6 @@ void PrecacheBeaconParticle(IEntityResourceManifest* pResourceManifest)
 
 void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 {
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	return;
-
 	SetBeaconColor(color);
 
 	CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(m_slot);
@@ -359,9 +353,6 @@ void ZEPlayer::EndBeacon()
 // iDuration being non-positive only kills off active marks.
 void ZEPlayer::CreateMark(float fDuration, Vector vecOrigin)
 {
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	return;
-
 	if (m_handleMark && m_handleMark.IsValid())
 	{
 		UTIL_AddEntityIOEvent(m_handleMark.Get(), "DestroyImmediately", nullptr, nullptr, "", 0);
@@ -424,9 +415,6 @@ void ZEPlayer::PurgeLeaderVotes()
 
 void ZEPlayer::StartGlow(Color color, int duration)
 {
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	return;
-
 	SetGlowColor(color);
 	CCSPlayerController* pController = CCSPlayerController::FromSlot(m_slot);
 	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();

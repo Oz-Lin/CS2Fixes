@@ -125,9 +125,6 @@ void ZR_Precache(IEntityResourceManifest* pResourceManifest)
 
 void ZR_CreateOverlay(const char* pszOverlayParticlePath, float flAlpha, float flRadius, float flLifeTime, Color clrTint, const char* pszMaterialOverride)
 {
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	return;
-
 	CEnvParticleGlow* particle = CreateEntityByName<CEnvParticleGlow>("env_particle_glow");
 
 	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
@@ -996,13 +993,10 @@ void ZR_OnRoundPrestart(IGameEvent* pEvent)
 void SetupRespawnToggler()
 {
 	CBaseEntity* relay = CreateEntityByName("logic_relay");
-	// CEntityKeyValues is broken after 2024-12-19 CS2 update, awaiting SDK update
-	//CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
 
-	//pKeyValues->SetString("targetname", "zr_toggle_respawn");
-	//relay->DispatchSpawn(pKeyValues);
-	relay->DispatchSpawn();
-	relay->SetName("zr_toggle_respawn");
+	pKeyValues->SetString("targetname", "zr_toggle_respawn");
+	relay->DispatchSpawn(pKeyValues);
 	g_hRespawnToggler = relay->GetHandle();
 }
 
