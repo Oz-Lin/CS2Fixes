@@ -23,14 +23,14 @@
 #include "cs2fixes.h"
 #include "entities.h"
 #include "entity/cgamerules.h"
+#include "entwatch.h"
 #include "gameconfig.h"
 #include "plat.h"
 
 extern CGameConfig* g_GameConfig;
 extern CCSGameRules* g_pGameRules;
 
-bool g_bGrenadeNoBlock = false;
-FAKE_BOOL_CVAR(cs2f_noblock_grenades, "Whether to use noblock on grenade projectiles", g_bGrenadeNoBlock, false, false)
+CConVar<bool> g_cvarGrenadeNoBlock("cs2f_noblock_grenades", FCVAR_NONE, "Whether to use noblock on grenade projectiles", false);
 
 void Patch_GetHammerUniqueId(CEntityInstance* pEntity)
 {
@@ -49,10 +49,13 @@ void CEntityListener::OnEntitySpawned(CEntityInstance* pEntity)
 	Message("Entity spawned: %s %s\n", pszClassName, ((CBaseEntity*)pEntity)->m_sUniqueHammerID().Get());
 #endif
 
-	if (g_bGrenadeNoBlock && V_stristr(pEntity->GetClassname(), "_projectile"))
+	if (g_cvarGrenadeNoBlock.Get() && V_stristr(pEntity->GetClassname(), "_projectile"))
 		reinterpret_cast<CBaseEntity*>(pEntity)->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
 
 	EntityHandler_OnEntitySpawned(reinterpret_cast<CBaseEntity*>(pEntity));
+
+	if (g_cvarEnableEntWatch.Get())
+		EW_OnEntitySpawned(pEntity);
 }
 
 void CEntityListener::OnEntityCreated(CEntityInstance* pEntity)
@@ -68,6 +71,7 @@ void CEntityListener::OnEntityCreated(CEntityInstance* pEntity)
 void CEntityListener::OnEntityDeleted(CEntityInstance* pEntity)
 {
 
+	EW_OnEntityDeleted(pEntity);
 }
 
 void CEntityListener::OnEntityParentChanged(CEntityInstance* pEntity, CEntityInstance* pNewParent)
