@@ -5,8 +5,7 @@ on:
     tags:
       - '*'
     branches:
-      - main
-      - ozlin-dev
+      - '*'
     paths-ignore:
     - LICENSE
     - README.md
