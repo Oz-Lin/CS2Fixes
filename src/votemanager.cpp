@@ -733,3 +733,5 @@ bool CVoteManager::CheckRTVStatus()
 
 	return false;
 }
+
+*/
