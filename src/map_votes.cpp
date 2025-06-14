@@ -38,15 +38,16 @@
 #include <playerslot.h>
 #include <random>
 #include <stdio.h>
-/*
+
 extern CGlobalVars* GetGlobals();
 extern CCSGameRules* g_pGameRules;
 extern IVEngineServer2* g_pEngineServer2;
 extern CSteamGameServerAPIContext g_steamAPI;
 extern IGameTypes* g_pGameTypes;
 
-CMapVoteSystem* g_pMapVoteSystem = nullptr;
 
+CMapVoteSystem* g_pMapVoteSystem = nullptr;
+/*
 CConVar<float> g_cvarVoteMapsCooldown("cs2f_vote_maps_cooldown", FCVAR_NONE, "Default number of hours until a map can be played again i.e. cooldown", 6.0f);
 CConVar<int> g_cvarVoteMaxNominations("cs2f_vote_max_nominations", FCVAR_NONE, "Number of nominations to include per vote, out of a maximum of 10", 10, true, 0, true, 10);
 CConVar<int> g_cvarVoteMaxMaps("cs2f_vote_max_maps", FCVAR_NONE, "Number of total maps to include per vote, including nominations, out of a maximum of 10", 10, true, 2, true, 10);
