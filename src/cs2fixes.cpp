@@ -399,8 +399,8 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 
 		g_playerManager->OnSteamAPIActivated();
 
-		if (g_cvarVoteManagerEnable.Get() && !g_pMapVoteSystem->IsMapListLoaded())
-			g_pMapVoteSystem->LoadMapList();
+		//if (g_cvarVoteManagerEnable.Get() && !g_pMapVoteSystem->IsMapListLoaded())
+		//	g_pMapVoteSystem->LoadMapList();
 
 		Message("Plugin late load finished\n");
 	}
@@ -636,8 +636,8 @@ void CS2Fixes::Hook_GameServerSteamAPIActivated()
 
 	g_playerManager->OnSteamAPIActivated();
 
-	if (g_cvarVoteManagerEnable.Get() && !g_pMapVoteSystem->IsMapListLoaded())
-		g_pMapVoteSystem->LoadMapList();
+	//if (g_cvarVoteManagerEnable.Get() && !g_pMapVoteSystem->IsMapListLoaded())
+	//	g_pMapVoteSystem->LoadMapList();
 
 	RETURN_META(MRES_IGNORED);
 }
@@ -845,13 +845,13 @@ void CS2Fixes::Hook_ClientCommand(CPlayerSlot slot, const CCommand& args)
 			pPlayer->UpdateLastInputTime();
 	}
 
-	if (g_cvarVoteManagerEnable.Get() && V_stricmp(args[0], "endmatch_votenextmap") == 0 && args.ArgC() == 2)
-	{
-		if (g_pMapVoteSystem->RegisterPlayerVote(slot, atoi(args[1])))
-			RETURN_META(MRES_HANDLED);
-		else
-			RETURN_META(MRES_SUPERCEDE);
-	}
+	//if (g_cvarVoteManagerEnable.Get() && V_stricmp(args[0], "endmatch_votenextmap") == 0 && args.ArgC() == 2)
+	//{
+	//	if (g_pMapVoteSystem->RegisterPlayerVote(slot, atoi(args[1])))
+	//		RETURN_META(MRES_HANDLED);
+	//	else
+	//		RETURN_META(MRES_SUPERCEDE);
+	//}
 
 	if (g_cvarEnableZR.Get() && slot != -1 && !V_strncmp(args.Arg(0), "jointeam", 8))
 	{
@@ -1050,21 +1050,21 @@ void CS2Fixes::Hook_ApplyGameSettings(KeyValues* pKV)
 	g_pMapVoteSystem->ApplyGameSettings(pKV);
 }
 
-void CS2Fixes::Hook_CreateWorkshopMapGroup(const char* name, const CUtlStringList& mapList)
-{
-	if (g_cvarVoteManagerEnable.Get() && g_pMapVoteSystem->IsMapListLoaded())
-		RETURN_META_MNEWPARAMS(MRES_HANDLED, CreateWorkshopMapGroup, (name, g_pMapVoteSystem->CreateWorkshopMapGroup()));
-	else
-		RETURN_META(MRES_IGNORED);
-}
+//void CS2Fixes::Hook_CreateWorkshopMapGroup(const char* name, const CUtlStringList& mapList)
+//{
+//	if (g_cvarVoteManagerEnable.Get() && g_pMapVoteSystem->IsMapListLoaded())
+//		RETURN_META_MNEWPARAMS(MRES_HANDLED, CreateWorkshopMapGroup, (name, g_pMapVoteSystem->CreateWorkshopMapGroup()));
+//	else
+//		RETURN_META(MRES_IGNORED);
+//}
 
 void CS2Fixes::Hook_GoToIntermission(bool bAbortedMatch)
 {
 	if (!g_pMapVoteSystem->IsIntermissionAllowed())
 		RETURN_META(MRES_SUPERCEDE);
 
-	if (g_cvarVoteManagerEnable.Get())
-		g_pVoteManager->OnIntermission();
+	//if (g_cvarVoteManagerEnable.Get())
+	//	g_pVoteManager->OnIntermission();
 
 	RETURN_META(MRES_IGNORED);
 }
@@ -1246,8 +1246,8 @@ void CS2Fixes::OnLevelShutdown()
 {
 	Message("OnLevelShutdown()\n");
 
-	if (g_cvarVoteManagerEnable.Get())
-		g_pMapVoteSystem->OnLevelShutdown();
+	//if (g_cvarVoteManagerEnable.Get())
+	//	g_pMapVoteSystem->OnLevelShutdown();
 }
 
 bool CS2Fixes::Pause(char* error, size_t maxlen)
