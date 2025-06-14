@@ -22,6 +22,8 @@
 
 #include "panoramavote.h"
 
+/*
+
 enum class ERTVState
 {
 	MAP_START,
@@ -88,3 +90,4 @@ private:
 };
 
 extern CVoteManager* g_pVoteManager;
+*/
