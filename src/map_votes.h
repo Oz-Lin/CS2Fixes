@@ -111,6 +111,7 @@ private:
 	float m_fPendingCooldown;
 };
 
+/*
 class CMapVoteSystem
 {
 public:
@@ -203,3 +204,4 @@ private:
 };
 
 extern CMapVoteSystem* g_pMapVoteSystem;
+*/

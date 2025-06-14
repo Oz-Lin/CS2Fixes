@@ -591,7 +591,7 @@ CON_COMMAND_CHAT_FLAGS(extend, "<minutes> - Extend current map (negative value r
 		return;
 	}
 
-	g_pVoteManager->ExtendMap(iExtendTime);
+	//g_pVoteManager->ExtendMap(iExtendTime);
 
 	const char* pszCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
 

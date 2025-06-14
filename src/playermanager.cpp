@@ -785,10 +785,10 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 	m_vecPlayers[slot.Get()] = pPlayer;
 
 	ResetPlayerFlags(slot.Get());
-
+	/*
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
 	g_pMapVoteSystem->ClearInvalidNominations();
-
+	*/
 	return true;
 }
 
@@ -807,12 +807,12 @@ void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 
 	ResetPlayerFlags(slot.Get());
 
-	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
+	//g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
 
 	// One tick delay, to ensure player count decrements
 	new CTimer(0.01f, false, true, []() {
-		g_pVoteManager->CheckRTVStatus();
-		g_pMapVoteSystem->ClearInvalidNominations();
+		//g_pVoteManager->CheckRTVStatus();
+		//g_pMapVoteSystem->ClearInvalidNominations();
 		return -1.0f;
 	});
 

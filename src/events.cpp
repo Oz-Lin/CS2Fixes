@@ -351,6 +351,6 @@ GAME_EVENT_F(cs_win_panel_match)
 {
 	g_pIdleSystem->PauseIdleChecks();
 
-	if (!g_pMapVoteSystem->IsVoteOngoing())
-		g_pMapVoteSystem->StartVote();
+	//if (!g_pMapVoteSystem->IsVoteOngoing())
+	//	g_pMapVoteSystem->StartVote();
 }

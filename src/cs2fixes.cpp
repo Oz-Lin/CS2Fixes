@@ -344,8 +344,8 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 	g_pAdminSystem = new CAdminSystem();
 	g_playerManager = new CPlayerManager();
 	g_pDiscordBotManager = new CDiscordBotManager();
-	g_pMapVoteSystem = new CMapVoteSystem();
-	g_pVoteManager = new CVoteManager();
+	//g_pMapVoteSystem = new CMapVoteSystem();
+	//g_pVoteManager = new CVoteManager();
 	g_pUserPreferencesSystem = new CUserPreferencesSystem();
 	g_pUserPreferencesStorage = new CUserPreferencesREST();
 	g_pZRPlayerClassManager = new CZRPlayerClassManager();
@@ -390,7 +390,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 		g_playerManager->OnLateLoad();
 
 		g_pPanoramaVoteHandler->Reset();
-		g_pVoteManager->VoteManager_Init();
+		//g_pVoteManager->VoteManager_Init();
 
 		g_pIdleSystem->Reset();
 
@@ -462,11 +462,11 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 	if (g_pDiscordBotManager)
 		delete g_pDiscordBotManager;
 
-	if (g_pMapVoteSystem)
-		delete g_pMapVoteSystem;
+	//if (g_pMapVoteSystem)
+	//	delete g_pMapVoteSystem;
 
-	if (g_pVoteManager)
-		delete g_pVoteManager;
+	//if (g_pVoteManager)
+	//	delete g_pVoteManager;
 
 	if (g_pUserPreferencesSystem)
 		delete g_pUserPreferencesSystem;
@@ -611,7 +611,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 	g_bHasTicked = false;
 
 	g_pPanoramaVoteHandler->Reset();
-	g_pVoteManager->VoteManager_Init();
+	//g_pVoteManager->VoteManager_Init();
 
 	g_pIdleSystem->Reset();
 }
@@ -1047,21 +1047,21 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 
 void CS2Fixes::Hook_ApplyGameSettings(KeyValues* pKV)
 {
-	g_pMapVoteSystem->ApplyGameSettings(pKV);
+	//g_pMapVoteSystem->ApplyGameSettings(pKV);
 }
 
-//void CS2Fixes::Hook_CreateWorkshopMapGroup(const char* name, const CUtlStringList& mapList)
-//{
+void CS2Fixes::Hook_CreateWorkshopMapGroup(const char* name, const CUtlStringList& mapList)
+{
 //	if (g_cvarVoteManagerEnable.Get() && g_pMapVoteSystem->IsMapListLoaded())
 //		RETURN_META_MNEWPARAMS(MRES_HANDLED, CreateWorkshopMapGroup, (name, g_pMapVoteSystem->CreateWorkshopMapGroup()));
 //	else
-//		RETURN_META(MRES_IGNORED);
-//}
+		RETURN_META(MRES_IGNORED);
+}
 
 void CS2Fixes::Hook_GoToIntermission(bool bAbortedMatch)
 {
-	if (!g_pMapVoteSystem->IsIntermissionAllowed())
-		RETURN_META(MRES_SUPERCEDE);
+	//if (!g_pMapVoteSystem->IsIntermissionAllowed())
+	//	RETURN_META(MRES_SUPERCEDE);
 
 	//if (g_cvarVoteManagerEnable.Get())
 	//	g_pVoteManager->OnIntermission();
@@ -1229,7 +1229,7 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 	g_pEngineServer2->ServerCommand(cmd);
 
 	g_playerManager->SetupInfiniteAmmo();
-	g_pMapVoteSystem->OnLevelInit(pMapName);
+	//g_pMapVoteSystem->OnLevelInit(pMapName);
 
 	if (g_cvarEnableZR.Get())
 		ZR_OnLevelInit();
