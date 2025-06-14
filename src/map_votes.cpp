@@ -17,7 +17,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
+
 
 #include "map_votes.h"
 #include "commands.h"
@@ -38,7 +38,7 @@
 #include <playerslot.h>
 #include <random>
 #include <stdio.h>
-
+/*
 extern CGlobalVars* GetGlobals();
 extern CCSGameRules* g_pGameRules;
 extern IVEngineServer2* g_pEngineServer2;

@@ -17,7 +17,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
+
 
 #include "votemanager.h"
 #include "commands.h"
@@ -28,6 +28,7 @@
 
 #include "tier0/memdbgon.h"
 
+/*
 extern CGameEntitySystem* g_pEntitySystem;
 extern IVEngineServer2* g_pEngineServer2;
 extern CGlobalVars* GetGlobals();
