@@ -61,7 +61,6 @@ void SetupCTeams();
 bool ZR_IsTeamAlive(int iTeamNum);
 
 EZRRoundState g_ZRRoundState = EZRRoundState::ROUND_START;
-static int g_iInfectionCountDown = 0;
 static bool g_bRespawnEnabled = true;
 static CHandle<CBaseEntity> g_hRespawnToggler;
 static CHandle<CTeam> g_hTeamCT;
@@ -276,13 +275,13 @@ void ZRClass::Override(ordered_json jsonKeys, std::string szClassname)
 }
 
 ZRHumanClass::ZRHumanClass(ordered_json jsonKeys, std::string szClassname) :
-	ZRClass(jsonKeys, szClassname, CS_TEAM_CT) {};
+	ZRClass(jsonKeys, szClassname, CS_TEAM_CT){};
 
 ZRZombieClass::ZRZombieClass(ordered_json jsonKeys, std::string szClassname) :
 	ZRClass(jsonKeys, szClassname, CS_TEAM_T),
 	iHealthRegenCount(jsonKeys.value("health_regen_count", 0)),
 	flHealthRegenInterval(jsonKeys.value("health_regen_interval", 0)),
-	flKnockback(jsonKeys.value("knockback", 1.0)) {};
+	flKnockback(jsonKeys.value("knockback", 1.0)){};
 
 void ZRZombieClass::Override(ordered_json jsonKeys, std::string szClassname)
 {
@@ -1453,10 +1452,15 @@ void ZR_StartInitialCountdown()
 	if (g_cvarInfectSpawnTimeMin.Get() > g_cvarInfectSpawnTimeMax.Get())
 		g_cvarInfectSpawnTimeMin.Set(g_cvarInfectSpawnTimeMax.Get());
 
-	g_iInfectionCountDown = g_cvarInfectSpawnTimeMin.Get() + (rand() % (g_cvarInfectSpawnTimeMax.Get() - g_cvarInfectSpawnTimeMin.Get() + 1));
-	new CTimer(0.0f, false, false, []() {
+	int iRand = rand();
+	auto iSecondsElapsed = std::make_shared<int>(0);
+	new CTimer(0.0f, false, false, [iRand, iSecondsElapsed]() {
 		if (g_ZRRoundState != EZRRoundState::ROUND_START)
 			return -1.0f;
+
+		int g_iInfectionCountDown = g_cvarInfectSpawnTimeMin.Get() + (iRand % (g_cvarInfectSpawnTimeMax.Get() - g_cvarInfectSpawnTimeMin.Get() + 1));
+		g_iInfectionCountDown -= *iSecondsElapsed;
+
 		if (g_iInfectionCountDown <= 0)
 		{
 			ZR_InitialInfection();
@@ -1472,7 +1476,7 @@ void ZR_StartInitialCountdown()
 			if (g_iInfectionCountDown % 5 == 0)
 				ClientPrintAll(HUD_PRINTTALK, "%s%s", ZR_PREFIX, message);
 		}
-		g_iInfectionCountDown--;
+		(*iSecondsElapsed)++;
 
 		return 1.0f;
 	});
@@ -1614,8 +1618,8 @@ void ZR_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args)
 
 void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pInfo, const int32 damage)
 {
-	// bullet only
-	if ((pInfo->m_bitsDamageType & DMG_BULLET) == 0 || !pInfo->m_pTrace || !pInfo->m_pTrace->m_pHitbox)
+	// bullet & knife only
+	if ((!(pInfo->m_bitsDamageType & DMG_BULLET) && !(pInfo->m_bitsDamageType & DMG_SLASH)) || !pInfo->m_pTrace || !pInfo->m_pTrace->m_pHitbox)
 		return;
 
 	const auto pVictimController = reinterpret_cast<CCSPlayerController*>(pVictimPawn->GetController());

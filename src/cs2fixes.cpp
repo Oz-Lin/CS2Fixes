@@ -123,6 +123,7 @@ SH_DECL_HOOK2(IGameEventManager2, LoadEventsFromFile, SH_NOATTRIB, 0, int, const
 SH_DECL_MANUALHOOK1_void(GoToIntermission, 0, 0, 0, bool);
 SH_DECL_MANUALHOOK2_void(PhysicsTouchShuffle, 0, 0, 0, CUtlVector<TouchLinked_t>*, bool);
 SH_DECL_MANUALHOOK3_void(DropWeapon, 0, 0, 0, CBasePlayerWeapon*, Vector*, Vector*);
+SH_DECL_HOOK1_void(IServer, SetGameSpawnGroupMgr, SH_NOATTRIB, 0, IGameSpawnGroupMgr*);
 
 CS2Fixes g_CS2Fixes;
 
@@ -135,7 +136,8 @@ IVEngineServer2* g_pEngineServer2 = nullptr;
 CGameConfig* g_GameConfig = nullptr;
 ISteamHTTP* g_http = nullptr;
 CSteamGameServerAPIContext g_steamAPI;
-CCSGameRules* g_pGameRules = nullptr; // Will be null between map end & new map startup, null check if necessary!
+CCSGameRules* g_pGameRules = nullptr;				  // Will be null between map end & new map startup, null check if necessary!
+CSpawnGroupMgrGameSystem* g_pSpawnGroupMgr = nullptr; // Will be null between map end & new map startup, null check if necessary!
 int g_iCGamePlayerEquipUseId = -1;
 int g_iCGamePlayerEquipPrecacheId = -1;
 int g_iCreateWorkshopMapGroupId = -1;
@@ -145,6 +147,7 @@ int g_iLoadEventsFromFileId = -1;
 int g_iGoToIntermissionId = -1;
 int g_iPhysicsTouchShuffle = -1;
 int g_iWeaponServiceDropWeaponId = -1;
+int g_iSetGameSpawnGroupMgrId = -1;
 
 CGameEntitySystem* GameEntitySystem()
 {
@@ -436,6 +439,9 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 	SH_REMOVE_HOOK_ID(g_iGoToIntermissionId);
 	SH_REMOVE_HOOK_ID(g_iCGamePlayerEquipUseId);
 
+	if (g_iSetGameSpawnGroupMgrId != -1)
+		SH_REMOVE_HOOK_ID(g_iSetGameSpawnGroupMgrId);
+
 	if (g_iCGamePlayerEquipPrecacheId != -1)
 		SH_REMOVE_HOOK_ID(g_iCGamePlayerEquipPrecacheId);
 
@@ -601,6 +607,9 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 	g_pEntitySystem = GameEntitySystem();
 	g_pEntitySystem->AddListenerEntity(g_pEntityListener);
 
+	if (g_pNetworkServerService->GetIGameServer())
+		g_iSetGameSpawnGroupMgrId = SH_ADD_HOOK(IServer, SetGameSpawnGroupMgr, g_pNetworkServerService->GetIGameServer(), SH_MEMBER(this, &CS2Fixes::Hook_SetGameSpawnGroupMgr), false);
+
 	Message("Hook_StartupServer: %s\n", pszMapName);
 
 	RegisterEventListeners();
@@ -738,7 +747,7 @@ void CS2Fixes::Hook_PostEvent(CSplitScreenSlot nSlot, bool bLocalOnly, int nClie
 			soundEventHashes.insert(GetSoundEventHash("Weapon_AWP.Zoom"));
 			soundEventHashes.insert(GetSoundEventHash("Weapon_AWP.ZoomOut"));
 			soundEventHashes.insert(GetSoundEventHash("Weapon_Revolver.Prepare"));
-		);
+			soundEventHashes.insert(GetSoundEventHash("Weapon.AutoSemiAutoSwitch")););
 
 		if (!soundEventHashes.contains(msg->soundevent_hash()))
 			return;
@@ -1208,6 +1217,72 @@ int CS2Fixes::Hook_LoadEventsFromFile(const char* filename, bool bSearchAll)
 	ExecuteOnce(g_gameEventManager = META_IFACEPTR(IGameEventManager2));
 
 	RETURN_META_VALUE(MRES_IGNORED, 0);
+}
+
+void CS2Fixes::Hook_SetGameSpawnGroupMgr(IGameSpawnGroupMgr* pSpawnGroupMgr)
+{
+	// This also resets our stored pointer on deletion, since null gets passed into this function, nice!
+	g_pSpawnGroupMgr = (CSpawnGroupMgrGameSystem*)pSpawnGroupMgr;
+}
+
+void* CS2Fixes::OnMetamodQuery(const char* iface, int* ret)
+{
+	if (V_strcmp(iface, CS2FIXES_INTERFACE))
+	{
+		if (ret)
+			*ret = META_IFACE_FAILED;
+
+		return nullptr;
+	}
+
+	if (ret)
+		*ret = META_IFACE_OK;
+
+	return static_cast<ICS2Fixes*>(&g_CS2Fixes);
+}
+
+std::uint64_t CS2Fixes::GetAdminFlags(std::uint64_t iSteam64ID) const
+{
+	if (!g_pAdminSystem)
+		return 0;
+
+	const CAdmin* admin = g_pAdminSystem->FindAdmin(static_cast<uint64>(iSteam64ID));
+	if (!admin)
+		return 0;
+
+	return admin->GetFlags();
+}
+
+bool CS2Fixes::SetAdminFlags(std::uint64_t iSteam64ID, std::uint64_t iFlags)
+{
+	if (!g_pAdminSystem)
+		return false;
+
+	CAdmin* admin = g_pAdminSystem->FindAdmin(static_cast<uint64>(iSteam64ID));
+	g_pAdminSystem->AddOrUpdateAdmin(static_cast<uint64>(iSteam64ID), iFlags, admin ? admin->GetImmunity() : 0);
+	return true;
+}
+
+int CS2Fixes::GetAdminImmunity(std::uint64_t iSteam64ID) const
+{
+	if (!g_pAdminSystem)
+		return 0;
+
+	const CAdmin* admin = g_pAdminSystem->FindAdmin(static_cast<uint64>(iSteam64ID));
+	if (!admin)
+		return 0;
+
+	return admin->GetImmunity();
+}
+
+bool CS2Fixes::SetAdminImmunity(std::uint64_t iSteam64ID, std::uint32_t iImmunity)
+{
+	if (!g_pAdminSystem)
+		return false;
+
+	CAdmin* admin = g_pAdminSystem->FindAdmin(static_cast<uint64>(iSteam64ID));
+	g_pAdminSystem->AddOrUpdateAdmin(static_cast<uint64>(iSteam64ID), admin ? admin->GetFlags() : 0, iImmunity);
+	return true;
 }
 
 void CS2Fixes::OnLevelInit(char const* pMapName,
