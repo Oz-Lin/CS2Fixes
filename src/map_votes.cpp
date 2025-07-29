@@ -17,8 +17,6 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-
 #include "map_votes.h"
 #include "commands.h"
 #include "common.h"
@@ -45,8 +43,6 @@ extern IVEngineServer2* g_pEngineServer2;
 extern CSteamGameServerAPIContext g_steamAPI;
 extern IGameTypes* g_pGameTypes;
 
-
-/*
 CMapVoteSystem* g_pMapVoteSystem = nullptr;
 
 CConVar<float> g_cvarVoteMapsCooldown("cs2f_vote_maps_cooldown", FCVAR_NONE, "Default number of hours until a map can be played again i.e. cooldown", 6.0f);
@@ -146,18 +142,18 @@ CON_COMMAND_CHAT_FLAGS(map, "<name/id> - Change map", ADMFLAG_CHANGEMAP)
 
 CON_COMMAND_CHAT_FLAGS(setnextmap, "[name/id] - Force next map (empty to clear forced next map)", ADMFLAG_CHANGEMAP)
 {
-	//if (!g_cvarVoteManagerEnable.Get())
-	//	return;
+	if (!g_cvarVoteManagerEnable.Get())
+		return;
 
-	//g_pMapVoteSystem->ForceNextMap(player, args.ArgC() < 2 ? "" : args[1]);
+	g_pMapVoteSystem->ForceNextMap(player, args.ArgC() < 2 ? "" : args[1]);
 }
 
 CON_COMMAND_CHAT(nominate, "[mapname] - Nominate a map (empty to clear nomination or list all maps)")
 {
-	//if (!g_cvarVoteManagerEnable.Get() || !player)
-	//	return;
+	if (!g_cvarVoteManagerEnable.Get() || !player)
+		return;
 
-	//g_pMapVoteSystem->AttemptNomination(player, args.ArgC() < 2 ? "" : args[1]);
+	g_pMapVoteSystem->AttemptNomination(player, args.ArgC() < 2 ? "" : args[1]);
 }
 
 CON_COMMAND_CHAT(nomlist, "- List the list of nominations")
@@ -1410,5 +1406,3 @@ bool CMapVoteSystem::ConvertMapListKVToJSON()
 	Message("Successfully converted KV1 maplist.cfg to JSON format at %s\n", pszJsonPath);
 	return true;
 }
-
-*/

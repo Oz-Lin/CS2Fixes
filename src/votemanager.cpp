@@ -17,8 +17,6 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-
 #include "votemanager.h"
 #include "commands.h"
 #include "ctimer.h"
@@ -28,17 +26,14 @@
 
 #include "tier0/memdbgon.h"
 
-
 extern CGameEntitySystem* g_pEntitySystem;
 extern IVEngineServer2* g_pEngineServer2;
 extern CGlobalVars* GetGlobals();
 extern CCSGameRules* g_pGameRules;
 
-/*
-
 CVoteManager* g_pVoteManager = nullptr;
 
-//CConVar<bool> g_cvarVoteManagerEnable("cs2f_votemanager_enable", FCVAR_NONE, "Whether to enable votemanager features such as RTV and extends", false);
+CConVar<bool> g_cvarVoteManagerEnable("cs2f_votemanager_enable", FCVAR_NONE, "Whether to enable votemanager features such as RTV and extends", false);
 CConVar<float> g_cvarExtendVoteDelay("cs2f_extend_vote_delay", FCVAR_NONE, "If cs2f_extend_mode is 2, Time after map start until extend votes can be triggered", 120.0f, true, 0.0f, false, 0.0f);
 CConVar<int> g_cvarExtendVoteMode("cs2f_extend_mode", FCVAR_NONE, "How extend votes are handled. (0=off, 1=only admins can start, 2=players can start with !ve, 3=auto start at given timeleft)", (int)EExtendVoteMode::EXTENDVOTE_AUTO, true, 0, true, 3);
 CConVar<int> g_cvarMaxExtends("cs2f_extends", FCVAR_NONE, "Maximum extends per map", 1, true, 0, false, 0);
@@ -745,5 +740,3 @@ bool CVoteManager::CheckRTVStatus()
 
 	return false;
 }
-
-*/
