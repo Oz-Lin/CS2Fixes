@@ -26,6 +26,7 @@
 #include "entity/cgamerules.h"
 #include "entwatch.h"
 #include "eventlistener.h"
+#include "hud_manager.h"
 #include "idlemanager.h"
 #include "leader.h"
 #include "map_votes.h"
@@ -128,6 +129,7 @@ GAME_EVENT_F(player_team)
 }
 
 CConVar<bool> g_cvarNoblock("cs2f_noblock_enable", FCVAR_NONE, "Whether to use player noblock, which sets debris collision on every player", false);
+CConVar<int> g_cvarFreeArmor("cs2f_free_armor", FCVAR_NONE, "Whether kevlar (1+) and/or helmet (2) are given automatically", 0, true, 0, true, 2);
 
 GAME_EVENT_F(player_spawn)
 {
@@ -173,6 +175,22 @@ GAME_EVENT_F(player_spawn)
 
 		return -1.0f;
 	});
+
+	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();
+
+	if (!pPawn)
+		return;
+
+	CCSPlayer_ItemServices* pItemServices = pPawn->m_pItemServices();
+
+	if (!pItemServices)
+		return;
+
+	// Dumb workaround for mp_free_armor breaking kevlar rebuys in buy menu
+	if (g_cvarFreeArmor.GetInt() == 1)
+		pItemServices->GiveNamedItem("item_kevlar");
+	else if (g_cvarFreeArmor.GetInt() == 2)
+		pItemServices->GiveNamedItem("item_assaultsuit");
 }
 
 CConVar<bool> g_cvarEnableTopDefender("cs2f_topdefender_enable", FCVAR_NONE, "Whether to use TopDefender", false);
@@ -240,6 +258,10 @@ GAME_EVENT_F(round_start)
 	if (g_cvarFullAllTalk.Get())
 		g_pEngineServer2->ServerCommand("sv_full_alltalk 1");
 
+	// Ensure there's no warmup, because mp_warmup_online_enabled gets randomly ignored for some reason, this is a problem with cs2f_fix_hud_flashing
+	if (g_cvarFixHudFlashing.Get() && g_pGameRules && g_pGameRules->m_bWarmupPeriod)
+		g_pEngineServer2->ServerCommand("mp_warmup_end");
+
 	if (!g_cvarEnableTopDefender.Get() || !GetGlobals())
 		return;
 
@@ -258,6 +280,9 @@ GAME_EVENT_F(round_start)
 
 GAME_EVENT_F(round_end)
 {
+	if (g_cvarFixHudFlashing.Get() && g_pGameRules)
+		g_pGameRules->m_bGameRestart = false;
+
 	if (!g_cvarEnableTopDefender.Get() || !GetGlobals())
 		return;
 
@@ -332,6 +357,6 @@ GAME_EVENT_F(cs_win_panel_match)
 {
 	g_pIdleSystem->PauseIdleChecks();
 
-	//if (!g_pMapVoteSystem->IsVoteOngoing())
-	//	g_pMapVoteSystem->StartVote();
+	if (!g_pMapVoteSystem->IsVoteOngoing())
+		g_pMapVoteSystem->StartVote();
 }

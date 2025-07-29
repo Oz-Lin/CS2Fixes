@@ -41,6 +41,7 @@
 #include "gameevents.pb.h"
 #include "gamesystem.h"
 #include "httpmanager.h"
+#include "hud_manager.h"
 #include "icvar.h"
 #include "idlemanager.h"
 #include "interface.h"
@@ -531,6 +532,7 @@ void CS2Fixes::Hook_DispatchConCommand(ConCommandRef cmdHandle, const CCommandCo
 		auto pController = CCSPlayerController::FromSlot(iCommandPlayerSlot);
 		bool bGagged = pController && pController->GetZEPlayer()->IsGagged();
 		bool bFlooding = pController && pController->GetZEPlayer()->IsFlooding();
+		bool bIsAdmin = pController && pController->GetZEPlayer()->IsAdminFlagSet(ADMFLAG_GENERIC);
 		bool bAdminChat = bTeamSay && *args[1] == '@';
 		bool bSilent = *args[1] == '/' || bAdminChat;
 		bool bCommand = *args[1] == '!' || *args[1] == '/';
@@ -574,10 +576,8 @@ void CS2Fixes::Hook_DispatchConCommand(ConCommandRef cmdHandle, const CCommandCo
 				if (!pPlayer)
 					continue;
 
-				if (pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC))
-					ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, " \4(ADMINS) %s:\1 %s", pController->GetPlayerName(), pszMessage);
-				else if (i == iCommandPlayerSlot.Get()) // Sender is not an admin
-					ClientPrint(pController, HUD_PRINTTALK, " \4(TO ADMINS) %s:\1 %s", pController->GetPlayerName(), pszMessage);
+				if (i == iCommandPlayerSlot.Get() || pPlayer->IsAdminFlagSet(ADMFLAG_GENERIC))
+					ClientPrint(CCSPlayerController::FromSlot(i), HUD_PRINTTALK, " \4(%sADMINS) %s:\6 %s", bIsAdmin ? "" : "TO ", pController->GetPlayerName(), pszMessage);
 			}
 		}
 
@@ -915,6 +915,13 @@ void CS2Fixes::Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int
 void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReason reason, const char* pszName, uint64 xuid, const char* pszNetworkID)
 {
 	Message("Hook_ClientDisconnect(%d, %d, \"%s\", %lli)\n", slot, reason, pszName, xuid);
+
+	CCSPlayerController* player = CCSPlayerController::FromSlot(slot);
+	if (player)
+		ZR_CheckTeamWinConditions(player->m_iTeamNum == CS_TEAM_T ? CS_TEAM_CT : CS_TEAM_T);
+	else if (!ZR_CheckTeamWinConditions(CS_TEAM_T)) // If we cant get team num, just check both
+		ZR_CheckTeamWinConditions(CS_TEAM_CT);
+
 	ZEPlayer* pPlayer = g_playerManager->GetPlayer(slot);
 
 	if (!pPlayer)
@@ -1315,6 +1322,8 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 
 	if (g_cvarEnableEntWatch.Get())
 		EW_OnLevelInit(pMapName);
+
+	StartFlashingFixTimer();
 }
 
 void CS2Fixes::OnLevelShutdown()

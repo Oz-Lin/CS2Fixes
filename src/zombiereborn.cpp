@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =============================================================================
  * CS2Fixes
  * Copyright (C) 2023-2025 Source2ZE
@@ -28,6 +28,7 @@
 #include "entity/cteam.h"
 #include "entity/services.h"
 #include "eventlistener.h"
+#include "hud_manager.h"
 #include "leader.h"
 #include "networksystem/inetworkmessages.h"
 #include "playermanager.h"
@@ -52,9 +53,9 @@ extern CCSGameRules* g_pGameRules;
 extern IGameEventManager2* g_gameEventManager;
 extern IGameEventSystem* g_gameEventSystem;
 extern double g_flUniversalTime;
+extern CConVar<int> g_cvarFreeArmor;
 
 void ZR_Infect(CCSPlayerController* pAttackerController, CCSPlayerController* pVictimController, bool bBroadcast);
-bool ZR_CheckTeamWinConditions(int iTeamNum);
 void ZR_Cure(CCSPlayerController* pTargetController);
 void ZR_EndRoundAndAddTeamScore(int iTeamNum);
 void SetupCTeams();
@@ -75,6 +76,7 @@ CConVar<float> g_cvarMaxZteleDistance("zr_ztele_max_distance", FCVAR_NONE, "Maxi
 CConVar<bool> g_cvarZteleHuman("zr_ztele_allow_humans", FCVAR_NONE, "Whether to allow humans to use ztele", false);
 CConVar<float> g_cvarKnockbackScale("zr_knockback_scale", FCVAR_NONE, "Global knockback scale", 5.0f);
 CConVar<int> g_cvarInfectSpawnType("zr_infect_spawn_type", FCVAR_NONE, "Type of Mother Zombies Spawn [0 = MZ spawn where they stand, 1 = MZ get teleported back to spawn on being picked]", (int)EZRSpawnType::RESPAWN, true, 0, true, 1);
+CConVar<bool> g_cvarInfectSpawnWarning("zr_infect_spawn_warning", FCVAR_NONE, "Whether to warn players of zombies spawning between humans", true);
 CConVar<int> g_cvarInfectSpawnTimeMin("zr_infect_spawn_time_min", FCVAR_NONE, "Minimum time in which Mother Zombies should be picked, after round start", 15, true, 0, false, 0);
 CConVar<int> g_cvarInfectSpawnTimeMax("zr_infect_spawn_time_max", FCVAR_NONE, "Maximum time in which Mother Zombies should be picked, after round start", 15, true, 1, false, 0);
 CConVar<int> g_cvarInfectSpawnMZRatio("zr_infect_spawn_mz_ratio", FCVAR_NONE, "Ratio of all Players to Mother Zombies to be spawned at round start", 7, true, 1, true, 64);
@@ -97,6 +99,7 @@ CConVar<bool> g_cvarInfectShake("zr_infect_shake", FCVAR_NONE, "Whether to shake
 CConVar<float> g_cvarInfectShakeAmplitude("zr_infect_shake_amp", FCVAR_NONE, "Amplitude of shaking effect", 15.0f, true, 0.0f, true, 16.0f);
 CConVar<float> g_cvarInfectShakeFrequency("zr_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
 CConVar<float> g_cvarInfectShakeDuration("zr_infect_shake_duration", FCVAR_NONE, "Duration of shaking effect", 5.0f, true, 0.0f, false, 0.0f);
+CConVar<float> g_cvarDamageCashScale("zr_damage_cash_scale", FCVAR_NONE, "Multiplier on cash given when damaging zombies (0.0 = disabled)", 0.0f, true, 0.0f, false, 100.0f);
 
 // meant only for offline config validation and can easily cause issues when used on live server
 #ifdef _DEBUG
@@ -509,15 +512,8 @@ void split(const std::string& s, char delim, Out result)
 
 void CZRPlayerClassManager::ApplyBaseClass(std::shared_ptr<ZRClass> pClass, CCSPlayerPawn* pPawn)
 {
-	std::shared_ptr<ZRModelEntry> pModelEntry = pClass->GetRandomModelEntry();
-	Color clrRender;
-	V_StringToColor(pModelEntry->szColor.c_str(), clrRender);
-
 	pPawn->m_iMaxHealth = pClass->iHealth;
 	pPawn->m_iHealth = pClass->iHealth;
-	pPawn->SetModel(pModelEntry->szModelPath.c_str());
-	pPawn->m_clrRender = clrRender;
-	pPawn->AcceptInput("Skin", pModelEntry->GetRandomSkin());
 	pPawn->m_flGravityScale = pClass->flGravity;
 
 	// I don't know why, I don't want to know why,
@@ -526,14 +522,9 @@ void CZRPlayerClassManager::ApplyBaseClass(std::shared_ptr<ZRClass> pClass, CCSP
 	// pPawn->m_flVelocityModifier = pClass->flSpeed;
 	const auto pController = reinterpret_cast<CCSPlayerController*>(pPawn->GetController());
 	if (const auto pPlayer = pController != nullptr ? pController->GetZEPlayer() : nullptr)
-	{
 		pPlayer->SetMaxSpeed(pClass->flSpeed);
-		pPlayer->SetActiveZRClass(pClass);
-		pPlayer->SetActiveZRModel(pModelEntry);
-	}
 
-	// This has to be done a bit later
-	UTIL_AddEntityIOEvent(pPawn, "SetScale", nullptr, nullptr, pClass->flScale);
+	ApplyBaseClassVisuals(pClass, pPawn);
 }
 
 // only changes that should not (directly) affect gameplay
@@ -807,11 +798,6 @@ void ZR_OnLevelInit()
 		// Necessary to fix bots kicked/joining infinitely when forced to CT https://github.com/Source2ZE/ZombieReborn/issues/64
 		g_pEngineServer2->ServerCommand("bot_quota_mode fill");
 		g_pEngineServer2->ServerCommand("mp_autoteambalance 0");
-		// These disable most of the buy menu for zombies
-		g_pEngineServer2->ServerCommand("mp_weapons_allow_pistols 3");
-		g_pEngineServer2->ServerCommand("mp_weapons_allow_smgs 3");
-		g_pEngineServer2->ServerCommand("mp_weapons_allow_heavy 3");
-		g_pEngineServer2->ServerCommand("mp_weapons_allow_rifles 3");
 
 		return -1.0f;
 	});
@@ -854,6 +840,11 @@ void ZRWeaponConfig::LoadWeaponConfig()
 
 std::shared_ptr<ZRWeapon> ZRWeaponConfig::FindWeapon(const char* pszWeaponName)
 {
+	if (V_strlen(pszWeaponName) > 7 && !V_strncasecmp(pszWeaponName, "weapon_", 7))
+		pszWeaponName = pszWeaponName + 7;
+	else if (V_strlen(pszWeaponName) > 5 && !V_strncasecmp(pszWeaponName, "item_", 5))
+		pszWeaponName = pszWeaponName + 5;
+
 	uint16 index = m_WeaponMap.Find(hash_32_fnv1a_const(pszWeaponName));
 	if (m_WeaponMap.IsValidIndex(index))
 		return m_WeaponMap[index];
@@ -1019,6 +1010,8 @@ void SetupCTeams()
 void ZR_OnRoundStart(IGameEvent* pEvent)
 {
 	ClientPrintAll(HUD_PRINTTALK, ZR_PREFIX "The game is \x05Humans vs. Zombies\x01, the goal for zombies is to infect all humans by knifing them.");
+	if (g_cvarInfectSpawnWarning.Get() && g_cvarInfectSpawnType.Get() == (int)EZRSpawnType::IN_PLACE)
+		ClientPrintAll(HUD_PRINTTALK, ZR_PREFIX "Classic spawn is enabled! Zombies will be \x07spawning between humans\x01!");
 	SetupRespawnToggler();
 	CZRRegenTimer::RemoveAllTimers();
 
@@ -1072,10 +1065,7 @@ void ZR_OnPlayerSpawn(CCSPlayerController* pController)
 
 void ZR_ApplyKnockback(CCSPlayerPawn* pHuman, CCSPlayerPawn* pVictim, int iDamage, const char* szWeapon, int hitgroup, float classknockback)
 {
-	if (V_strlen(szWeapon) <= 7)
-		return;
-
-	std::shared_ptr<ZRWeapon> pWeapon = g_pZRWeaponConfig->FindWeapon(szWeapon + 7);
+	std::shared_ptr<ZRWeapon> pWeapon = g_pZRWeaponConfig->FindWeapon(szWeapon);
 	std::shared_ptr<ZRHitgroup> pHitgroup = g_pZRHitgroupConfig->FindHitgroupIndex(hitgroup);
 	// player shouldn't be able to pick up that weapon in the first place, but just in case
 	if (!pWeapon)
@@ -1152,8 +1142,11 @@ void ZR_StripAndGiveKnife(CCSPlayerPawn* pPawn)
 		pItemServices->GiveNamedItem("weapon_knife");
 
 		ConVarRefAbstract mp_free_armor("mp_free_armor");
-		if (mp_free_armor.GetBool())
+
+		if (mp_free_armor.GetInt() == 1 || g_cvarFreeArmor.GetInt() == 1)
 			pItemServices->GiveNamedItem("item_kevlar");
+		else if (mp_free_armor.GetInt() == 2 || g_cvarFreeArmor.GetInt() == 2)
+			pItemServices->GiveNamedItem("item_assaultsuit");
 	}
 
 	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pWeaponServices->m_hMyWeapons();
@@ -1442,7 +1435,7 @@ void ZR_InitialInfection()
 	if (g_cvarRespawnDelay.Get() < 0.0f)
 		g_bRespawnEnabled = false;
 
-	ClientPrintAll(HUD_PRINTCENTER, "First infection has started!");
+	SendHudMessageAll(4, EHudPriority::InfectionCountdown, "First infection has started!");
 	ClientPrintAll(HUD_PRINTTALK, ZR_PREFIX "First infection has started! Good luck, survivors!");
 	g_ZRRoundState = EZRRoundState::POST_INFECTION;
 }
@@ -1469,12 +1462,17 @@ void ZR_StartInitialCountdown()
 
 		if (g_iInfectionCountDown <= 60)
 		{
-			char message[256];
-			V_snprintf(message, sizeof(message), "First infection in \7%i %s\1!", g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
+			char classicSpawnMsg[256];
 
-			ClientPrintAll(HUD_PRINTCENTER, message);
+			if (g_cvarInfectSpawnWarning.Get() && g_cvarInfectSpawnType.Get() == (int)EZRSpawnType::IN_PLACE)
+				V_snprintf(classicSpawnMsg, sizeof(classicSpawnMsg), "<span color='#940000'>WARNING: </span><span color='#FF3333'>Zombies will spawn between humans!</span><br>\u00A0<br>");
+			else
+				V_snprintf(classicSpawnMsg, sizeof(classicSpawnMsg), "");
+
+			SendHudMessageAll(2, EHudPriority::InfectionCountdown, "%sFirst infection in <span color='#00FF00'>%i %s</span>!", classicSpawnMsg, g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
+
 			if (g_iInfectionCountDown % 5 == 0)
-				ClientPrintAll(HUD_PRINTTALK, "%s%s", ZR_PREFIX, message);
+				ClientPrintAll(HUD_PRINTTALK, "%sFirst infection in \7%i %s\1!", ZR_PREFIX, g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
 		}
 		(*iSecondsElapsed)++;
 
@@ -1527,19 +1525,26 @@ bool ZR_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPa
 	return false;
 }
 
-// return false to prevent player from picking it up
-bool ZR_Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pPlayerWeapon)
+// can prevent purchasing and picking it up
+AcquireResult ZR_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices* pItemServices, CEconItemView* pEconItem)
 {
-	CCSPlayerPawn* pPawn = pWeaponServices->__m_pChainEntity();
+	CCSPlayerPawn* pPawn = pItemServices->__m_pChainEntity();
+
 	if (!pPawn)
-		return false;
-	const char* pszWeaponClassname = pPlayerWeapon->GetWeaponClassname();
-	if (pPawn->m_iTeamNum() == CS_TEAM_T && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pszWeaponClassname, "weapon_knife", 12) && V_strncmp(pszWeaponClassname, "weapon_c4", 9))
-		return false;
-	if (pPawn->m_iTeamNum() == CS_TEAM_CT && V_strlen(pszWeaponClassname) > 7 && !g_pZRWeaponConfig->FindWeapon(pszWeaponClassname + 7))
-		return false;
-	// doesn't guarantee the player will pick the weapon up, it just allows the original function to run
-	return true;
+		return AcquireResult::Allowed;
+
+	const WeaponInfo_t* pWeaponInfo = FindWeaponInfoByItemDefIndex(pEconItem->m_iItemDefinitionIndex);
+
+	if (!pWeaponInfo)
+		return AcquireResult::Allowed;
+
+	if (pPawn->m_iTeamNum() == CS_TEAM_T && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && V_strncmp(pWeaponInfo->m_pClass, "weapon_c4", 9))
+		return AcquireResult::NotAllowedByTeam;
+	if (pPawn->m_iTeamNum() == CS_TEAM_CT && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
+		return AcquireResult::NotAllowedByProhibition;
+
+	// doesn't guarantee the player will acquire the weapon, it just allows the original function to run
+	return AcquireResult::Allowed;
 }
 
 void ZR_Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, int nOutputID)
@@ -1645,6 +1650,14 @@ void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pI
 	if (pKillerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
 	{
 		auto flClassKnockback = 1.0f;
+		float flCashScale = g_cvarDamageCashScale.Get();
+
+		if (flCashScale > 0)
+		{
+			const auto pKillerController = pKillerPawn->GetOriginalController();
+			int money = pKillerController->m_pInGameMoneyServices->m_iAccount;
+			pKillerController->m_pInGameMoneyServices->m_iAccount = money + (damage * flCashScale);
+		}
 
 		if (pVictimController->GetZEPlayer())
 		{

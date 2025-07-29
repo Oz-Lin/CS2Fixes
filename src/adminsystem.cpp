@@ -29,6 +29,7 @@
 #include "entwatch.h"
 #include "filesystem.h"
 #include "gamesystem.h"
+#include "hud_manager.h"
 #include "icvar.h"
 #include "interfaces/interfaces.h"
 #include "map_votes.h"
@@ -560,7 +561,9 @@ CON_COMMAND_CHAT_FLAGS(hsay, "<message> - Say something as a hud hint", ADMFLAG_
 		return;
 	}
 
-	ClientPrintAll(HUD_PRINTCENTER, "%s", args.ArgS());
+	SendHudMessageAll(
+		10, EHudPriority::AdminHSay, "<span class='fontSize-l'><span color='#FFFFFF'>ADMIN: </span><span color='#D11313'>%s</span></span>",
+		EscapeHTMLSpecialCharacters(args.ArgS()).c_str());
 }
 
 CON_COMMAND_CHAT_FLAGS(rcon, "<command> - Send a command to server console", ADMFLAG_RCON)
@@ -1097,7 +1100,7 @@ CON_COMMAND_CHAT_FLAGS(give, "<name> <weapon> - Give a weapon/item to a player",
 	int pSlots[MAXPLAYERS];
 	ETargetType nType;
 
-	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_DEAD | NO_SPECTATOR | NO_TERRORIST, nType))
+	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_DEAD | NO_SPECTATOR, nType))
 		return;
 
 	const char* pszCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
@@ -1149,10 +1152,6 @@ CON_COMMAND_CHAT_FLAGS(give, "<name> <weapon> - Give a weapon/item to a player",
 			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Failed to give %s, something went wrong.", pWeaponInfo->m_pClass);
 			return;
 		}
-
-		// If the weapon spawn goes through AWS, it needs to be manually selected because it spawns dropped in-world due to ZR enforcing mp_weapons_allow_* cvars against T's
-		if (pWeaponInfo->m_eSlot == GEAR_SLOT_RIFLE || pWeaponInfo->m_eSlot == GEAR_SLOT_PISTOL)
-			pWeaponServices->SelectItem(pWeapon);
 
 		if (iNumClients == 1)
 			PrintSingleAdminAction(pszCommandPlayerName, pTarget->GetPlayerName(), szAction, "");
@@ -1258,7 +1257,7 @@ void CAdmin::SetImmunity(std::uint32_t iAdminImmunity)
 	if (!zpAdmin) // Authentication is checked in GetPlayerFromSteamId, so dont need to redo it here
 		return;
 
-	zpAdmin->SetAdminImmunity(static_cast<int>(iAdminImmunity)); // should be safe to cast, as range for std::uint32_t is [0, INT_MAX]
+	zpAdmin->SetAdminImmunity(static_cast<int>(iAdminImmunity)); // should be safe to cast due to earlier check
 }
 
 CAdminSystem::CAdminSystem()
@@ -1694,7 +1693,10 @@ void CAdminSystem::ShowDisconnectedPlayers(CCSPlayerController* const pAdmin)
 
 			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "%i. %s", i, std::get<0>(ply).c_str());
 			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tSteam64 ID - %s", std::to_string(std::get<1>(ply)).c_str());
-			ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tIP Address - %s", std::get<2>(ply).c_str());
+
+			ZEPlayer* zpAdmin = pAdmin->GetZEPlayer();
+			if (zpAdmin && zpAdmin->IsAdminFlagSet(ADMFLAG_RCON))
+				ClientPrint(pAdmin, HUD_PRINTCONSOLE, "\tIP Address - %s", std::get<2>(ply).c_str());
 		}
 	}
 	if (!bAnyDCedPlayers)
