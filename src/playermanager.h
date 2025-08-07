@@ -21,9 +21,9 @@
 #include "bitvec.h"
 #include "common.h"
 #include "entity/cparticlesystem.h"
+#include "entity/cpointorient.h"
 #include "entity/cpointworldtext.h"
 #include "entity/lights.h"
-#include "entity/viewmodels.h"
 #include "gamesystem.h"
 #include "steam/isteamuser.h"
 #include "steam/steam_api_common.h"
@@ -258,6 +258,7 @@ public:
 	void SetActiveZRModel(std::shared_ptr<ZRModelEntry> pZRClass) { m_pActiveZRModel = pZRClass; }
 	void SetEntwatchHudMode(int iMode);
 	void SetEntwatchClangtags(bool bStatus);
+	void SetPointOrient(CPointOrient* pOrient) { m_hPointOrient.Set(pOrient); }
 	void SetEntwatchHud(CPointWorldText* pWorldText) { m_hEntwatchHud.Set(pWorldText); }
 	void SetEntwatchHudColor(Color colorHud);
 	void SetEntwatchHudPos(float x, float y);
@@ -305,6 +306,7 @@ public:
 	int GetButtonWatchMode();
 	int GetEntwatchHudMode();
 	bool GetEntwatchClangtags() { return m_bEntwatchClantags; }
+	CPointOrient* GetPointOrient() { return m_hPointOrient.Get(); }
 	CPointWorldText* GetEntwatchHud() { return m_hEntwatchHud.Get(); }
 	Color GetEntwatchHudColor() { return m_colorEntwatchHud; }
 	float GetEntwatchHudX() { return m_flEntwatchHudX; }
@@ -325,6 +327,7 @@ public:
 	void EndGlow();
 	void SetSteamIdAttribute();
 	void CreateEntwatchHud();
+	void CreatePointOrient();
 
 private:
 	bool m_bAuthenticated;
@@ -374,6 +377,7 @@ private:
 	std::shared_ptr<ZRClass> m_pActiveZRClass;
 	std::shared_ptr<ZRModelEntry> m_pActiveZRModel;
 	int m_iButtonWatchMode;
+	CHandle<CPointOrient> m_hPointOrient;
 	CHandle<CPointWorldText> m_hEntwatchHud;
 	int m_iEntwatchHudMode;
 	bool m_bEntwatchClantags;
