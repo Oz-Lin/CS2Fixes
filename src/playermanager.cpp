@@ -40,12 +40,7 @@
 
 #include "tier0/memdbgon.h"
 
-extern IVEngineServer2* g_pEngineServer2;
-extern CGameEntitySystem* g_pEntitySystem;
-extern CGlobalVars* GetGlobals();
-extern IGameEventSystem* g_gameEventSystem;
-extern CUtlVector<CServerSideClient*>* GetClientList();
-extern CSpawnGroupMgrGameSystem* g_pSpawnGroupMgr;
+CPlayerManager* g_playerManager = nullptr;
 
 CConVar<int> g_cvarAdminImmunityTargetting("cs2f_admin_immunity", FCVAR_NONE, "Mode for which admin immunity system targetting allows: 0 - strictly lower, 1 - equal to or lower, 2 - ignore immunity levels", 0, true, 0, true, 2);
 CConVar<bool> g_cvarEnableMapSteamIds("cs2f_map_steamids_enable", FCVAR_NONE, "Whether to make Steam ID's available to maps", false);
@@ -105,7 +100,7 @@ void ZEPlayer::OnSpawn()
 	SetSpeedMod(1.f);
 
 	ZEPlayerHandle handle = GetHandle();
-	new CTimer(0.0f, false, false, [handle] {
+	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [handle] {
 		if (handle.Get())
 		{
 			handle.Get()->CreatePointOrient();
@@ -309,7 +304,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 	if (pGiver && pGiver->IsLeader())
 		bLeaderBeacon = true;
 
-	new CTimer(0.0f, false, false, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]() {
+	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hPlayer, hParticle, hGiver, iTeamNum, bLeaderBeacon]() {
 		CParticleSystem* pParticle = hParticle.Get();
 
 		if (!hPlayer.IsValid() || !pParticle)
@@ -326,7 +321,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 		pParticle->AcceptInput("Start");
 
 		// delayed DestroyImmediately input so particle effect can be replayed (and default particle doesn't bug out)
-		new CTimer(0.5f, false, false, [hParticle]() {
+		CTimer::Create(0.5f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hParticle]() {
 			CParticleSystem* particle = hParticle.Get();
 			if (particle)
 				particle->AcceptInput("DestroyImmediately");
@@ -464,7 +459,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	int iTeamNum = hPawn->m_iTeamNum();
 
 	// check if player's team or model changed
-	new CTimer(0.5f, false, false, [hGlowModel, hPawn, iTeamNum]() {
+	CTimer::Create(0.5f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hGlowModel, hPawn, iTeamNum]() {
 		CBaseModelEntity* pModel = hGlowModel.Get();
 		CCSPlayerPawn* pawn = hPawn.Get();
 
@@ -493,7 +488,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	if (duration < 1)
 		return;
 
-	new CTimer((float)duration, false, false, [hGlowModel]() {
+	CTimer::Create((float)duration, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hGlowModel]() {
 		CBaseModelEntity* pModel = hGlowModel.Get();
 
 		if (!pModel)
@@ -813,7 +808,7 @@ void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
 
 	// One tick delay, to ensure player count decrements
-	new CTimer(0.01f, false, true, []() {
+	CTimer::Create(0.01f, TIMERFLAG_MAP, []() {
 		g_pVoteManager->CheckRTVStatus();
 		g_pMapVoteSystem->ClearInvalidNominations();
 		return -1.0f;
@@ -905,7 +900,7 @@ void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t* pRespons
 				ClientPrint(pController, HUD_PRINTTALK, " \7WARNING: You will be kicked in %i seconds due to failed Steam authentication.\n", g_cvarDelayAuthFailKick.Get());
 
 				ZEPlayerHandle hPlayer = pPlayer->GetHandle();
-				new CTimer(g_cvarDelayAuthFailKick.Get(), true, true, [hPlayer]() {
+				CTimer::Create(g_cvarDelayAuthFailKick.Get(), TIMERFLAG_NONE, [hPlayer]() {
 					if (!hPlayer.IsValid())
 						return -1.f;
 
@@ -1003,8 +998,7 @@ void CPlayerManager::CheckHideDistances()
 			{
 				auto pTargetPawn = pTargetController->GetPawn();
 
-				// TODO: Unhide dead pawns if/when valve fixes the crash
-				if (pTargetPawn && (!g_cvarHideTeammatesOnly.Get() || pTargetController->m_iTeamNum == team))
+				if (pTargetPawn && pTargetPawn->IsAlive() && (!g_cvarHideTeammatesOnly.Get() || pTargetController->m_iTeamNum == team))
 					player->SetTransmit(j, pTargetPawn->GetAbsOrigin().DistToSqr(vecPosition) <= hideDistance * hideDistance);
 			}
 		}
@@ -1022,8 +1016,6 @@ static const char* g_szPlayerStates[] =
 		"STATE_OBSERVER_MODE",
 		"STATE_GUNGAME_RESPAWN",
 		"STATE_DORMANT"};
-
-extern CConVar<bool> g_cvarEnableHide;
 
 void CPlayerManager::UpdatePlayerStates()
 {
@@ -1047,18 +1039,25 @@ void CPlayerManager::UpdatePlayerStates()
 
 		if (iCurrentPlayerState != iPreviousPlayerState)
 		{
-			if (g_cvarEnableHide.Get())
-				Message("Player %s changed states from %s to %s\n", pController->GetPlayerName(), g_szPlayerStates[iPreviousPlayerState], g_szPlayerStates[iCurrentPlayerState]);
+#ifdef _DEBUG
+			Message("Player %s changed states from %s to %s\n", pController->GetPlayerName(), g_szPlayerStates[iPreviousPlayerState], g_szPlayerStates[iCurrentPlayerState]);
+#endif
 
 			pPlayer->SetPlayerState(iCurrentPlayerState);
+		}
 
-			// Send full update to people going in/out of spec as a mitigation for hide crashes
-			if (g_cvarEnableHide.Get() && (iCurrentPlayerState == STATE_OBSERVER_MODE || iPreviousPlayerState == STATE_OBSERVER_MODE))
+		// Update entwatch hud position
+		if (g_cvarEnableEntWatch.Get() && g_cvarEnableEntwatchHud.Get())
+		{
+			CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+			if (!pPawn)
+				continue;
+
+			CPointOrient* pOrient = pPlayer->GetPointOrient();
+			if (pOrient)
 			{
-				CServerSideClient* pClient = GetClientBySlot(i);
-
-				if (pClient)
-					pClient->ForceFullUpdate();
+				Vector origin = pPawn->GetEyePosition();
+				pOrient->Teleport(&origin, nullptr, nullptr);
 			}
 		}
 	}
@@ -1068,7 +1067,7 @@ CConVar<bool> g_cvarInfiniteAmmo("cs2f_infinite_reserve_ammo", FCVAR_NONE, "Whet
 
 void CPlayerManager::SetupInfiniteAmmo()
 {
-	new CTimer(5.0f, false, true, []() {
+	CTimer::Create(5.0f, TIMERFLAG_MAP, []() {
 		if (!g_cvarInfiniteAmmo.Get() || !GetGlobals())
 			return 5.0f;
 

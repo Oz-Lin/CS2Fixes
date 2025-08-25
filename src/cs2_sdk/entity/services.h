@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =============================================================================
  * CS2Fixes
  * Copyright (C) 2023-2025 Source2ZE
@@ -25,13 +25,13 @@
 #include <platform.h>
 #include <unordered_map>
 
+extern bool g_bAwsChangingTeam;
+
 #define AMMO_OFFSET_HEGRENADE 13
 #define AMMO_OFFSET_FLASHBANG 14
 #define AMMO_OFFSET_SMOKEGRENADE 15
 #define AMMO_OFFSET_MOLOTOV 16
 #define AMMO_OFFSET_DECOY 17
-
-extern bool g_bAwsChangingTeam;
 
 struct CSPerRoundStats_t
 {
@@ -83,6 +83,7 @@ class CPlayerPawnComponent
 	virtual void unk_14() = 0;
 	virtual void unk_15() = 0;
 	virtual void unk_16() = 0;
+	virtual void unk_17() = 0;
 
 public:
 	DECLARE_SCHEMA_CLASS(CPlayerPawnComponent);

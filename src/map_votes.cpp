@@ -37,12 +37,6 @@
 #include <random>
 #include <stdio.h>
 
-extern CGlobalVars* GetGlobals();
-extern CCSGameRules* g_pGameRules;
-extern IVEngineServer2* g_pEngineServer2;
-extern CSteamGameServerAPIContext g_steamAPI;
-extern IGameTypes* g_pGameTypes;
-
 CMapVoteSystem* g_pMapVoteSystem = nullptr;
 
 CConVar<float> g_cvarVoteMapsCooldown("cs2f_vote_maps_cooldown", FCVAR_NONE, "Default number of hours until a map can be played again i.e. cooldown", 6.0f);
@@ -54,25 +48,10 @@ CON_COMMAND_CHAT_FLAGS(reload_map_list, "- Reload map list, also reloads current
 	if (!g_cvarVoteManagerEnable.Get())
 		return;
 
-	if (g_pMapVoteSystem->GetDownloadQueueSize() != 0)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Please wait for current map downloads to finish before loading map list again.");
-		return;
-	}
-
-	if (!g_pMapVoteSystem->LoadMapList() || !V_strcmp(g_pMapVoteSystem->GetCurrentMapName(), "MISSING_MAP"))
-	{
+	if (g_pMapVoteSystem->ReloadMapList())
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Map list reloaded!");
+	else
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Failed to reload map list!");
-		return;
-	}
-
-	// A CUtlStringList param is also expected, but we build it in our CreateWorkshopMapGroup pre-hook anyways
-	CALL_VIRTUAL(void, g_GameConfig->GetOffset("IGameTypes_CreateWorkshopMapGroup"), g_pGameTypes, "workshop");
-
-	// Updating the mapgroup requires reloading the map for everything to load properly
-	g_pMapVoteSystem->ReloadCurrentMap();
-
-	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Map list reloaded!");
 }
 
 CON_COMMAND_CHAT_FLAGS(map, "<name/id> - Change map", ADMFLAG_CHANGEMAP)
@@ -101,7 +80,7 @@ CON_COMMAND_CHAT_FLAGS(map, "<name/id> - Change map", ADMFLAG_CHANGEMAP)
 	{
 		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to \x06%s\x01...", pszMapInput);
 
-		new CTimer(5.0f, false, true, [sMapInput]() {
+		CTimer::Create(5.0f, TIMERFLAG_MAP, [sMapInput]() {
 			g_pEngineServer2->ChangeLevel(sMapInput.c_str(), nullptr);
 			return -1.0f;
 		});
@@ -134,7 +113,7 @@ CON_COMMAND_CHAT_FLAGS(map, "<name/id> - Change map", ADMFLAG_CHANGEMAP)
 
 	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to \x06%s\x01...", sMapName.c_str());
 
-	new CTimer(5.0f, false, true, [sCommand]() {
+	CTimer::Create(5.0f, TIMERFLAG_MAP, [sCommand]() {
 		g_pEngineServer2->ServerCommand(sCommand.c_str());
 		return -1.0f;
 	});
@@ -257,7 +236,7 @@ void CMapVoteSystem::OnLevelInit(const char* pMapName)
 		ClearPlayerInfo(i);
 
 	// Delay one tick to override any .cfg's
-	new CTimer(0.02f, false, true, []() {
+	CTimer::Create(0.02f, TIMERFLAG_MAP, []() {
 		g_pEngineServer2->ServerCommand("mp_match_end_changelevel 0");
 		g_pEngineServer2->ServerCommand("mp_endmatch_votenextmap 1");
 
@@ -283,7 +262,7 @@ void CMapVoteSystem::StartVote()
 
 	if (m_iForcedNextMap != -1)
 	{
-		new CTimer(6.0f, false, true, []() {
+		CTimer::Create(6.0f, TIMERFLAG_MAP, []() {
 			g_pMapVoteSystem->FinishVote();
 			return -1.0f;
 		});
@@ -299,7 +278,7 @@ void CMapVoteSystem::StartVote()
 
 		// Reload the current map as a fallback
 		// Previously we fell back to game behaviour which could choose a random map in mapgroup, but a crash bug with default map changes was introduced in 2025-05-07 CS2 update
-		new CTimer(6.0f, false, true, []() {
+		CTimer::Create(6.0f, TIMERFLAG_MAP, []() {
 			g_pMapVoteSystem->ReloadCurrentMap();
 			return -1.0f;
 		});
@@ -372,7 +351,7 @@ void CMapVoteSystem::StartVote()
 	// Start the end-of-vote timer to finish the vote
 	static ConVarRefAbstract mp_endmatch_votenextleveltime("mp_endmatch_votenextleveltime");
 	float flVoteTime = mp_endmatch_votenextleveltime.GetFloat();
-	new CTimer(flVoteTime, false, true, []() {
+	CTimer::Create(flVoteTime, TIMERFLAG_MAP, []() {
 		g_pMapVoteSystem->FinishVote();
 		return -1.0;
 	});
@@ -456,7 +435,7 @@ void CMapVoteSystem::FinishVote()
 	}
 
 	// Wait a second and force-change the map
-	new CTimer(1.0, false, true, [iWinningMap]() {
+	CTimer::Create(1.0, TIMERFLAG_MAP, [iWinningMap]() {
 		char sChangeMapCmd[128];
 		uint64 workshopId = iWinningMap > g_pMapVoteSystem->GetMapListSize() ? iWinningMap : g_pMapVoteSystem->GetMapWorkshopId(iWinningMap);
 
@@ -888,13 +867,13 @@ void CMapVoteSystem::ForceNextMap(CCSPlayerController* pController, const char* 
 
 void CMapVoteSystem::PrintDownloadProgress()
 {
-	if (m_DownloadQueue.Count() == 0)
+	if (GetDownloadQueueSize() == 0)
 		return;
 
 	uint64 iBytesDownloaded = 0;
 	uint64 iTotalBytes = 0;
 
-	if (!g_steamAPI.SteamUGC()->GetItemDownloadInfo(m_DownloadQueue.Head(), &iBytesDownloaded, &iTotalBytes) || !iTotalBytes)
+	if (!g_steamAPI.SteamUGC()->GetItemDownloadInfo(m_DownloadQueue.front(), &iBytesDownloaded, &iTotalBytes) || !iTotalBytes)
 		return;
 
 	double flMBDownloaded = (double)iBytesDownloaded / 1024 / 1024;
@@ -903,30 +882,45 @@ void CMapVoteSystem::PrintDownloadProgress()
 	double flProgress = (double)iBytesDownloaded / (double)iTotalBytes;
 	flProgress *= 100.f;
 
-	Message("Downloading map %lli: %.2f/%.2f MB (%.2f%%)\n", m_DownloadQueue.Head(), flMBDownloaded, flTotalMB, flProgress);
+	Message("Downloading map %lli: %.2f/%.2f MB (%.2f%%)\n", m_DownloadQueue.front(), flMBDownloaded, flTotalMB, flProgress);
 }
 
 void CMapVoteSystem::OnMapDownloaded(DownloadItemResult_t* pResult)
 {
-	if (!m_DownloadQueue.Check(pResult->m_nPublishedFileId))
+	if (std::find(m_DownloadQueue.begin(), m_DownloadQueue.end(), pResult->m_nPublishedFileId) == m_DownloadQueue.end())
 		return;
 
-	m_DownloadQueue.RemoveAtHead();
+	// Some weird rate limiting that's been observed? Back off for a while then retry download
+	if (pResult->m_eResult == k_EResultNoConnection)
+	{
+		PublishedFileId_t workshopID = m_DownloadQueue.front();
+		Message("Addon %llu download failed with status code 3, retrying in 2 minutes\n", workshopID);
 
-	if (m_DownloadQueue.Count() == 0)
+		m_timerRateLimitedDownload = CTimer::Create(120.0f, TIMERFLAG_NONE, [workshopID]() {
+			g_steamAPI.SteamUGC()->DownloadItem(workshopID, false);
+
+			return -1.0f;
+		});
+
+		return;
+	}
+
+	m_DownloadQueue.pop_front();
+
+	if (GetDownloadQueueSize() == 0)
 		return;
 
-	g_steamAPI.SteamUGC()->DownloadItem(m_DownloadQueue.Head(), false);
+	g_steamAPI.SteamUGC()->DownloadItem(m_DownloadQueue.front(), false);
 }
 
 void CMapVoteSystem::QueueMapDownload(PublishedFileId_t iWorkshopId)
 {
-	if (m_DownloadQueue.Check(iWorkshopId))
+	if (std::find(m_DownloadQueue.begin(), m_DownloadQueue.end(), iWorkshopId) != m_DownloadQueue.end())
 		return;
 
-	m_DownloadQueue.Insert(iWorkshopId);
+	m_DownloadQueue.push_back(iWorkshopId);
 
-	if (m_DownloadQueue.Head() == iWorkshopId)
+	if (m_DownloadQueue.front() == iWorkshopId)
 		g_steamAPI.SteamUGC()->DownloadItem(iWorkshopId, false);
 }
 
@@ -945,13 +939,8 @@ bool CMapVoteSystem::LoadMapList()
 
 	if (!jsonFile.is_open())
 	{
-		if (!ConvertMapListKVToJSON())
-		{
-			Panic("Failed to open %s and convert KV1 maplist.cfg to JSON format, map list not loaded!\n", pszJsonPath);
-			return false;
-		}
-
-		jsonFile.open(szPath);
+		Panic("Failed to open %s, map list not loaded!\n", pszJsonPath);
+		return false;
 	}
 
 	ordered_json jsonMaps = ordered_json::parse(jsonFile, nullptr, false, true);
@@ -961,6 +950,8 @@ bool CMapVoteSystem::LoadMapList()
 		Panic("Failed parsing JSON from %s, map list not loaded!\n", pszJsonPath);
 		return false;
 	}
+
+	m_timeMapListModified = std::filesystem::last_write_time(szPath);
 
 	// Load map cooldowns from file
 	KeyValues* pKVcooldowns = new KeyValues("cooldowns");
@@ -1018,7 +1009,7 @@ bool CMapVoteSystem::LoadMapList()
 		}
 	}
 
-	new CTimer(0.f, true, true, []() {
+	m_timerDownloadProgress = CTimer::Create(0.f, TIMERFLAG_NONE, []() {
 		if (g_pMapVoteSystem->GetDownloadQueueSize() == 0)
 			return -1.f;
 
@@ -1169,7 +1160,16 @@ void CMapVoteSystem::OnLevelShutdown()
 	}
 
 	if (IsMapListLoaded())
+	{
 		WriteMapCooldownsToFile();
+
+		char szPath[MAX_PATH];
+		V_snprintf(szPath, sizeof(szPath), "%s%s", Plat_GetGameDirectory(), "/csgo/addons/cs2fixes/configs/maplist.jsonc");
+
+		// If maplist.jsonc was updated, automatically reload the map list without a map change (map is about to change anyways)
+		if (m_timeMapListModified != std::filesystem::last_write_time(szPath))
+			ReloadMapList(false);
+	}
 }
 
 std::string CMapVoteSystem::ConvertFloatToString(float fValue, int precision)
@@ -1328,81 +1328,43 @@ float CCooldown::GetCurrentCooldown()
 	return fRemainingTime;
 }
 
-void CMapVoteSystem::ReloadCurrentMap()
+bool CMapVoteSystem::ReloadCurrentMap()
 {
 	char sChangeMapCmd[128] = "";
 
 	if (GetCurrentWorkshopMap() != 0)
 		V_snprintf(sChangeMapCmd, sizeof(sChangeMapCmd), "host_workshop_map %llu", GetCurrentWorkshopMap());
-	else
+	else if (V_strcmp(g_pMapVoteSystem->GetCurrentMapName(), "MISSING_MAP"))
 		V_snprintf(sChangeMapCmd, sizeof(sChangeMapCmd), "map %s", GetCurrentMapName());
+	else
+		return false;
 
 	g_pEngineServer2->ServerCommand(sChangeMapCmd);
+	return true;
 }
 
-// TODO: remove this once servers have been given at least a few months to update cs2fixes
-bool CMapVoteSystem::ConvertMapListKVToJSON()
+bool CMapVoteSystem::ReloadMapList(bool bReloadMap)
 {
-	Message("Attempting to convert KV1 maplist.cfg to JSON format...\n");
-
-	const char* pszPath = "addons/cs2fixes/configs/maplist.cfg";
-
-	KeyValues* pKV = new KeyValues("maplist");
-	KeyValues::AutoDelete autoDelete(pKV);
-
-	if (!pKV->LoadFromFile(g_pFullFileSystem, pszPath))
+	if (g_pMapVoteSystem->GetDownloadQueueSize() != 0)
 	{
-		Panic("Failed to load %s\n", pszPath);
+		m_DownloadQueue.clear();
+
+		if (!m_timerDownloadProgress.expired())
+			m_timerDownloadProgress.lock()->Cancel();
+
+		if (!m_timerRateLimitedDownload.expired())
+			m_timerRateLimitedDownload.lock()->Cancel();
+	}
+
+	if (!g_pMapVoteSystem->LoadMapList())
 		return false;
-	}
 
-	ordered_json jsonMapList;
+	// A CUtlStringList param is also expected, but we build it in our CreateWorkshopMapGroup pre-hook anyways
+	CALL_VIRTUAL(void, g_GameConfig->GetOffset("IGameTypes_CreateWorkshopMapGroup"), g_pGameTypes, "workshop");
 
-	jsonMapList["Groups"] = ordered_json(ordered_json::value_t::object);
+	// Updating the mapgroup requires reloading the map for everything to load properly
+	if (bReloadMap)
+		return g_pMapVoteSystem->ReloadCurrentMap();
 
-	for (KeyValues* pKey = pKV->GetFirstSubKey(); pKey; pKey = pKey->GetNextKey())
-	{
-		ordered_json jsonMap;
-
-		if (pKey->FindKey("enabled"))
-			jsonMap["enabled"] = pKey->GetBool("enabled");
-		if (pKey->FindKey("workshop_id"))
-			jsonMap["workshop_id"] = pKey->GetUint64("workshop_id");
-		if (pKey->FindKey("min_players"))
-			jsonMap["min_players"] = pKey->GetInt("min_players");
-		if (pKey->FindKey("max_players"))
-			jsonMap["max_players"] = pKey->GetInt("max_players");
-		if (pKey->FindKey("cooldown"))
-			jsonMap["cooldown"] = pKey->GetInt("cooldown");
-
-		jsonMapList["Maps"][pKey->GetName()] = jsonMap;
-	}
-
-	const char* pszJsonPath = "addons/cs2fixes/configs/maplist.jsonc";
-	const char* pszKVConfigRenamePath = "addons/cs2fixes/configs/maplist_old.cfg";
-	char szPath[MAX_PATH];
-	V_snprintf(szPath, sizeof(szPath), "%s%s%s", Plat_GetGameDirectory(), "/csgo/", pszJsonPath);
-	std::ofstream jsonFile(szPath);
-
-	if (!jsonFile.is_open())
-	{
-		Panic("Failed to open %s\n", pszJsonPath);
-		return false;
-	}
-
-	jsonFile << std::setfill('\t') << std::setw(1) << jsonMapList << std::endl;
-
-	char szKVRenamePath[MAX_PATH];
-	V_snprintf(szPath, sizeof(szPath), "%s%s%s", Plat_GetGameDirectory(), "/csgo/", pszPath);
-	V_snprintf(szKVRenamePath, sizeof(szPath), "%s%s%s", Plat_GetGameDirectory(), "/csgo/", pszKVConfigRenamePath);
-
-	std::rename(szPath, szKVRenamePath);
-
-	// remove old cfg example if it exists
-	const char* pszKVExamplePath = "addons/cs2fixes/configs/maplist.cfg.example";
-	V_snprintf(szPath, sizeof(szPath), "%s%s%s", Plat_GetGameDirectory(), "/csgo/", pszKVExamplePath);
-	std::remove(szPath);
-
-	Message("Successfully converted KV1 maplist.cfg to JSON format at %s\n", pszJsonPath);
 	return true;
 }

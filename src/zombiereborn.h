@@ -28,6 +28,8 @@
 
 using ordered_json = nlohmann::ordered_json;
 
+extern CConVar<bool> g_cvarEnableZR;
+
 #define ZR_PREFIX " \4[Zombie:Reborn]\1 "
 #define HUMAN_CLASS_KEY_NAME "zr_human_class"
 #define ZOMBIE_CLASS_KEY_NAME "zr_zombie_class"
@@ -38,6 +40,8 @@ enum class EZRRoundState
 	POST_INFECTION,
 	ROUND_END,
 };
+
+extern EZRRoundState g_ZRRoundState;
 
 enum EZRSpawnType
 {
@@ -82,26 +86,25 @@ struct ZRClass
 		iAdminFlag(pClass->iAdminFlag)
 	{
 		vecModels.clear();
-		for (auto pModel : pClass->vecModels)
-		{
-			std::shared_ptr<ZRModelEntry> modelEntry = std::make_shared<ZRModelEntry>(pModel);
-			vecModels.push_back(modelEntry);
-		}
+		vecModels.reserve(pClass->vecModels.size());
+
+		for (const auto& pModel : pClass->vecModels)
+			vecModels.push_back(std::make_shared<ZRModelEntry>(pModel));
 	};
 
 	ZRClass(ordered_json jsonKeys, std::string szClassname, int iTeam);
 	void PrintInfo()
 	{
 		std::string szModels = "";
-		for (auto pModel : vecModels)
+		for (const auto& pModel : vecModels)
 		{
 			szModels += "\n\t\t" + pModel->szModelPath;
 			szModels += " Color=\"" + pModel->szColor + "\"";
 			szModels += " Skins=[";
-			for (int iSkin : pModel->vecSkins)
+			for (int i = 0; i < pModel->vecSkins.size(); i++)
 			{
-				szModels += std::to_string(pModel->vecSkins[iSkin]);
-				if (iSkin != pModel->vecSkins.size() - 1)
+				szModels += std::to_string(pModel->vecSkins[i]);
+				if (i != pModel->vecSkins.size() - 1)
 					szModels += " ";
 			}
 			szModels += "]";
@@ -154,15 +157,15 @@ struct ZRZombieClass : ZRClass
 	void PrintInfo()
 	{
 		std::string szModels = "";
-		for (auto pModel : vecModels)
+		for (const auto& pModel : vecModels)
 		{
 			szModels += "\n\t\t" + pModel->szModelPath;
 			szModels += " Color=\"" + pModel->szColor + "\"";
 			szModels += " Skins=[";
-			for (int iSkin : pModel->vecSkins)
+			for (int i = 0; i < pModel->vecSkins.size(); i++)
 			{
-				szModels += std::to_string(pModel->vecSkins[iSkin]);
-				if (iSkin != pModel->vecSkins.size() - 1)
+				szModels += std::to_string(pModel->vecSkins[i]);
+				if (i != pModel->vecSkins.size() - 1)
 					szModels += " ";
 			}
 			szModels += "]";
@@ -208,6 +211,8 @@ public:
 	void ApplyPreferredOrDefaultZombieClass(CCSPlayerPawn* pPawn);
 	void PrecacheModels(IEntityResourceManifest* pResourceManifest);
 	void GetZRClassList(int iTeam, std::vector<std::shared_ptr<ZRClass>>& vecClasses, CCSPlayerController* pController = nullptr);
+	void CreateRegenTimer(int iPlayerSlot, CHandle<CCSPlayerPawn> hPawn, float flInterval, int iAmount);
+	void CancelRegenTimer(int iPlayerSlot);
 
 private:
 	void ApplyBaseClass(std::shared_ptr<ZRClass> pClass, CCSPlayerPawn* pPawn);
@@ -218,27 +223,10 @@ private:
 	// These exist so we can iterate the class maps in insertion order
 	std::vector<uint32> m_ZombieClassKeys;
 	std::vector<uint32> m_HumanClassKeys;
+	std::weak_ptr<CTimer> m_vecRegenTimers[MAXPLAYERS];
 };
 
-class CZRRegenTimer : public CTimerBase
-{
-public:
-	CZRRegenTimer(float flRegenInterval, int iRegenAmount, CHandle<CCSPlayerPawn> hPawnHandle) :
-		CTimerBase(flRegenInterval, false, false), m_iRegenAmount(iRegenAmount), m_hPawnHandle(hPawnHandle){};
-
-	bool Execute();
-	static void StartRegen(float flRegenInterval, int iRegenAmount, CCSPlayerController* pController);
-	static void StopRegen(CCSPlayerController* pController);
-	static int GetIndex(CPlayerSlot slot);
-	static void Tick();
-	static void RemoveAllTimers();
-
-private:
-	static double s_flNextExecution;
-	static CZRRegenTimer* s_vecRegenTimers[MAXPLAYERS];
-	int m_iRegenAmount;
-	CHandle<CCSPlayerPawn> m_hPawnHandle;
-};
+extern CZRPlayerClassManager* g_pZRPlayerClassManager;
 
 struct ZRWeapon
 {
@@ -260,6 +248,8 @@ private:
 	std::map<uint32, std::shared_ptr<ZRWeapon>> m_WeaponMap;
 };
 
+extern ZRWeaponConfig* g_pZRWeaponConfig;
+
 class ZRHitgroupConfig
 {
 public:
@@ -270,12 +260,7 @@ private:
 	std::map<uint32, std::shared_ptr<ZRHitgroup>> m_HitgroupMap;
 };
 
-extern ZRWeaponConfig* g_pZRWeaponConfig;
 extern ZRHitgroupConfig* g_pZRHitgroupConfig;
-extern CZRPlayerClassManager* g_pZRPlayerClassManager;
-
-extern CConVar<bool> g_cvarEnableZR;
-extern EZRRoundState g_ZRRoundState;
 
 void ZR_OnLevelInit();
 void ZR_OnRoundPrestart(IGameEvent* pEvent);

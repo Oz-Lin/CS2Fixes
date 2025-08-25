@@ -26,14 +26,10 @@
 #include "gameevents.pb.h"
 #include "networksystem/inetworkmessages.h"
 
-extern CCSGameRules* g_pGameRules;
-extern IGameEventManager2* g_gameEventManager;
-extern IGameEventSystem* g_gameEventSystem;
-extern CGlobalVars* GetGlobals();
-
 CConVar<bool> g_cvarFixHudFlashing("cs2f_fix_hud_flashing", FCVAR_NONE, "Whether to fix hud flashing using a workaround, this BREAKS warmup so pick one or the other", false);
 CConVar<bool> g_cvarDisableHudOutsideRound("cs2f_disable_hud_outside_round", FCVAR_NONE, "Whether to disable hud messages that would flash when a round is not ongoing, since flashing fix cannot run then", false);
 CConVar<int> g_cvarHudDurationLeeway("cs2f_hud_duration_leeway", FCVAR_NONE, "Extra seconds duration to leave hud messages visible (without priority), reduces transition flashes between different priority messages", 2);
+
 static std::vector<std::shared_ptr<CHudMessage>> g_vecHudMessages;
 
 bool ShouldDisplayForPlayer(ZEPlayerHandle hPlayer, EHudPriority ePriority)
@@ -84,7 +80,7 @@ void CreateHudMessage(std::shared_ptr<CHudMessage> pHudMessage)
 	g_vecHudMessages.push_back(pHudMessage);
 
 	// Start a timer to remove this hud message after its duration passes
-	new CTimer(pHudMessage->GetDuration(), true, true, [pHudMessage]() {
+	CTimer::Create(pHudMessage->GetDuration(), TIMERFLAG_NONE, [pHudMessage]() {
 		g_vecHudMessages.erase(std::remove(g_vecHudMessages.begin(), g_vecHudMessages.end(), pHudMessage), g_vecHudMessages.end());
 
 		return -1.0f;
@@ -140,7 +136,7 @@ void SendHudMessageAll(int iDuration, EHudPriority ePriority, const char* pszMes
 void StartFlashingFixTimer()
 {
 	// Timer that fakes m_bGameRestart enabled, to fix flashing with show_survival_respawn_status
-	new CTimer(0.5f, false, true, []() {
+	CTimer::Create(0.5f, TIMERFLAG_MAP, []() {
 		if (!g_cvarFixHudFlashing.Get() || !g_pGameRules)
 			return 0.5f;
 

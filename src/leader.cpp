@@ -26,11 +26,6 @@
 
 #include "tier0/memdbgon.h"
 
-extern IVEngineServer2* g_pEngineServer2;
-extern CGameEntitySystem* g_pEntitySystem;
-extern CGlobalVars* GetGlobals();
-extern IGameEventManager2* g_gameEventManager;
-
 // All colors MUST have 255 alpha
 // clang-format off
 std::map<std::string, ColorPreset> mapColorPresets = {
@@ -331,7 +326,7 @@ static bool Leader_CreateDefendMarker(ZEPlayer* pPlayer, Color clrTint, int iDur
 
 	g_iMarkerCount++;
 
-	new CTimer(iDuration, false, false, []() {
+	CTimer::Create(iDuration, TIMERFLAG_MAP | TIMERFLAG_ROUND, []() {
 		if (g_iMarkerCount > 0)
 			g_iMarkerCount--;
 

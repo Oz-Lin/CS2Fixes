@@ -48,15 +48,16 @@
 
 using json = nlohmann::json;
 
-extern IGameEventSystem* g_gameEventSystem;
-extern CGameEntitySystem* g_pEntitySystem;
-extern IVEngineServer2* g_pEngineServer2;
-extern ISteamHTTP* g_http;
-extern CConVar<CUtlString> g_cvarFlashLightAttachment;
-
 CConVar<bool> g_cvarEnableCommands("cs2f_commands_enable", FCVAR_NONE, "Whether to enable chat commands", false);
 CConVar<bool> g_cvarEnableAdminCommands("cs2f_admin_commands_enable", FCVAR_NONE, "Whether to enable admin chat commands", false);
 CConVar<bool> g_cvarEnableWeapons("cs2f_weapons_enable", FCVAR_NONE, "Whether to enable weapon commands", false);
+
+// We need to use a helper function to avoid command macros accessing command list before its initialized
+std::map<uint32, std::shared_ptr<CChatCommand>>& CommandList()
+{
+	static std::map<uint32, std::shared_ptr<CChatCommand>> commandList;
+	return commandList;
+}
 
 int GetGrenadeAmmo(CCSPlayer_WeaponServices* pWeaponServices, const WeaponInfo_t* pWeaponInfo)
 {
@@ -245,7 +246,7 @@ void RegisterWeaponCommands()
 	{
 		for (const auto& alias : aliases)
 		{
-			new CChatCommand(alias.c_str(), ParseWeaponCommand, "- Buys this weapon", ADMFLAG_NONE, CMDFLAG_NOHELP);
+			CChatCommand::Create(alias.c_str(), ParseWeaponCommand, "- Buys this weapon", ADMFLAG_NONE, CMDFLAG_NOHELP);
 
 			char cmdName[64];
 			V_snprintf(cmdName, sizeof(cmdName), "%s%s", COMMAND_PREFIX, alias.c_str());
@@ -253,12 +254,6 @@ void RegisterWeaponCommands()
 			new ConCommand(cmdName, WeaponCommandCallback, "Buys this weapon", FCVAR_RELEASE | FCVAR_CLIENT_CAN_EXECUTE | FCVAR_LINKED_CONCOMMAND);
 		}
 	}
-}
-
-std::map<uint32, CChatCommand*>& CommandList()
-{
-	static std::map<uint32, CChatCommand*> commandList;
-	return commandList;
 }
 
 void ParseChatCommand(const char* pMessage, CCSPlayerController* pController)
@@ -451,25 +446,25 @@ CON_COMMAND_CHAT(hide, "<distance> - Hide nearby players")
 		return;
 	}
 
-	int distance;
-
-	if (args.ArgC() < 2)
-		distance = g_cvarDefaultHideDistance.Get();
-	else
-		distance = V_StringToInt32(args[1], -1);
-
-	if (distance > g_cvarMaxHideDistance.Get() || distance < 0)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only hide players between 0 and %i units away.", g_cvarMaxHideDistance.Get());
-		return;
-	}
-
 	ZEPlayer* pZEPlayer = player->GetZEPlayer();
 
 	// Something has to really go wrong for this to happen
 	if (!pZEPlayer)
 	{
 		Warning("%s Tried to access a null ZEPlayer!!\n", player->GetPlayerName());
+		return;
+	}
+
+	int distance;
+
+	if (args.ArgC() < 2)
+		distance = pZEPlayer->GetHideDistance() > 0 ? pZEPlayer->GetHideDistance() : g_cvarDefaultHideDistance.Get();
+	else
+		distance = V_StringToInt32(args[1], -1);
+
+	if (distance > g_cvarMaxHideDistance.Get() || distance < 0)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You can only hide players between\x06 0\x01 and \x06%i units\x01 away.", g_cvarMaxHideDistance.Get());
 		return;
 	}
 
@@ -482,7 +477,7 @@ CON_COMMAND_CHAT(hide, "<distance> - Hide nearby players")
 	if (distance == 0)
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Hiding players is now disabled.");
 	else
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Now hiding players within %i units.", distance);
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Now hiding players within \x06%i units\x01.", distance);
 }
 
 void PrintHelp(const CCommand& args, CCSPlayerController* player)
@@ -494,9 +489,9 @@ void PrintHelp(const CCommand& args, CCSPlayerController* player)
 		{
 			ClientPrint(player, HUD_PRINTCONSOLE, "The list of all commands is:");
 
-			for (auto cmdPair : CommandList())
+			for (const auto& cmdPair : CommandList())
 			{
-				CChatCommand* cmd = cmdPair.second;
+				auto cmd = cmdPair.second;
 
 				if (!cmd->IsCommandFlagSet(CMDFLAG_NOHELP))
 					rgstrCommands.push_back(std::string("c_") + cmd->GetName() + " " + cmd->GetDescription());
@@ -509,9 +504,9 @@ void PrintHelp(const CCommand& args, CCSPlayerController* player)
 
 			ZEPlayer* pZEPlayer = player->GetZEPlayer();
 
-			for (auto cmdPair : CommandList())
+			for (const auto& cmdPair : CommandList())
 			{
-				CChatCommand* cmd = cmdPair.second;
+				auto cmd = cmdPair.second;
 				uint64 flags = cmd->GetAdminFlags();
 
 				if ((pZEPlayer->IsAdminFlagSet(flags) || ((flags & FLAG_LEADER) == FLAG_LEADER && pZEPlayer->IsLeader()))
@@ -541,9 +536,9 @@ void PrintHelp(const CCommand& args, CCSPlayerController* player)
 
 		if (!player)
 		{
-			for (auto cmdPair : CommandList())
+			for (const auto& cmdPair : CommandList())
 			{
-				CChatCommand* cmd = cmdPair.second;
+				auto cmd = cmdPair.second;
 
 				if (!cmd->IsCommandFlagSet(CMDFLAG_NOHELP)
 					&& ((!bOnlyCheckStart && V_stristr(cmd->GetName(), pszSearchTerm))
@@ -555,9 +550,9 @@ void PrintHelp(const CCommand& args, CCSPlayerController* player)
 		{
 			ZEPlayer* pZEPlayer = player->GetZEPlayer();
 
-			for (auto cmdPair : CommandList())
+			for (const auto& cmdPair : CommandList())
 			{
-				CChatCommand* cmd = cmdPair.second;
+				auto cmd = cmdPair.second;
 				uint64 flags = cmd->GetAdminFlags();
 
 				if ((pZEPlayer->IsAdminFlagSet(flags) || ((flags & FLAG_LEADER) == FLAG_LEADER && pZEPlayer->IsLeader()))
@@ -650,7 +645,7 @@ CON_COMMAND_CHAT(spec, "[name] - Spectate another player or join spectators")
 	// 1 frame delay as observer services will be null on same frame as spectator team switch
 	CHandle<CCSPlayerController> hPlayer = player->GetHandle();
 	CHandle<CCSPlayerController> hTarget = pTarget->GetHandle();
-	new CTimer(0.0f, false, false, [hPlayer, hTarget]() {
+	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hPlayer, hTarget]() {
 		CCSPlayerController* pPlayer = hPlayer.Get();
 		CCSPlayerController* pTargetPlayer = hTarget.Get();
 		if (!pPlayer || !pTargetPlayer)

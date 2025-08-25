@@ -25,6 +25,8 @@
 #include "detours.h"
 #include "engine/igameeventsystem.h"
 #include "entity/cbasebutton.h"
+#include "entity/ccsplayercontroller.h"
+#include "entity/ccsplayerpawn.h"
 #include "entity/cgamerules.h"
 #include "entity/cmathcounter.h"
 #include "entity/cpointworldtext.h"
@@ -48,12 +50,6 @@
 #include <sstream>
 
 #include "tier0/memdbgon.h"
-
-extern CGlobalVars* GetGlobals();
-extern IGameEventManager2* g_gameEventManager;
-extern IGameEventSystem* g_gameEventSystem;
-extern INetworkMessages* g_pNetworkMessages;
-extern CCSGameRules* g_pGameRules;
 
 CEWHandler* g_pEWHandler = nullptr;
 
@@ -986,7 +982,7 @@ void EWItemInstance::StartGlow()
 	int a = colorGlow.a();
 	int iTeam = iTeamNum;
 	CHandle<CCSWeaponBase> hWep = pItemWeapon->GetHandle();
-	new CTimer(0.1f, false, false, [hWep, iTeam, r, g, b, a] {
+	CTimer::Create(0.1f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hWep, iTeam, r, g, b, a] {
 		CCSWeaponBase* pWep = hWep.Get();
 		if (pWep)
 		{
@@ -1625,7 +1621,7 @@ void CEWHandler::PlayerPickup(CCSPlayerPawn* pPawn, int iItemInstance)
 	if (g_cvarEnableEntwatchHud.Get() && !m_bHudTicking)
 	{
 		m_bHudTicking = true;
-		new CTimer(EW_HUD_TICKRATE, false, false, [] {
+		CTimer::Create(EW_HUD_TICKRATE, TIMERFLAG_MAP | TIMERFLAG_ROUND, [] {
 			return EW_UpdateHud();
 		});
 	}
@@ -1941,15 +1937,6 @@ void CEWHandler::Hook_Use(InputData_t* pInput)
 	if (!pController || pController->GetPlayerSlot() != pItem->iOwnerSlot)
 		RETURN_META(resVal);
 
-	const char* classname = pEntity->GetClassname();
-
-	if (!strcmp(classname, "func_button") || !strcmp(classname, "func_rot_button") || !strcmp(classname, "momentary_rot_button") || !strcmp(classname, "func_physical_button"))
-	{
-		CBaseButton* pButton = (CBaseButton*)pEntity;
-		if (pButton->m_bLocked || pButton->m_bDisabled)
-			RETURN_META(resVal);
-	}
-
 	//
 	// WE SHOW USE MESSAGE IN FireOutput
 	// This is just to prevent unnecessary stuff with buttons like movement
@@ -2086,7 +2073,7 @@ void EW_OnEntitySpawned(CEntityInstance* pEntity)
 		if (itemindex != -1)
 		{
 			std::shared_ptr<EWItemInstance> item = g_pEWHandler->vecItems[itemindex];
-			new CTimer(0.5, false, false, [item] {
+			CTimer::Create(0.5, TIMERFLAG_MAP | TIMERFLAG_ROUND, [item] {
 				if (item)
 					item->FindExistingHandlers();
 				return -1.0f;
@@ -2106,7 +2093,7 @@ void EW_OnEntitySpawned(CEntityInstance* pEntity)
 	// delay it cuz stupid spawn orders
 
 	CHandle<CBaseEntity> hEntity = pEnt->GetHandle();
-	new CTimer(0.25, false, false, [hEntity] {
+	CTimer::Create(0.25, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hEntity] {
 		if (hEntity.Get())
 			g_pEWHandler->RegisterHandler(hEntity.Get());
 		return -1.0;

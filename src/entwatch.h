@@ -21,13 +21,17 @@
 
 #include "common.h"
 #include "ctimer.h"
-#include "entity/ccsplayercontroller.h"
-#include "entity/ccsplayerpawn.h"
 #include "eventlistener.h"
 #include "gamesystem.h"
 #include "vendor/nlohmann/json_fwd.hpp"
 
 using ordered_json = nlohmann::ordered_json;
+
+class CCSPlayerController;
+class CCSPlayerPawn;
+
+extern CConVar<bool> g_cvarEnableEntWatch;
+extern CConVar<bool> g_cvarEnableEntwatchHud;
 
 #define EW_PREFIX " \4[EntWatch]\1 "
 

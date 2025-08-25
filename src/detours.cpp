@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =============================================================================
  * CS2Fixes
  * Copyright (C) 2023-2025 Source2ZE
@@ -53,14 +53,6 @@
 #include "zombiereborn.h"
 
 #include "tier0/memdbgon.h"
-
-extern CGlobalVars* GetGlobals();
-extern CGameEntitySystem* g_pEntitySystem;
-extern IGameEventManager2* g_gameEventManager;
-extern CCSGameRules* g_pGameRules;
-extern IVEngineServer2* g_pEngineServer2;
-extern CMapVoteSystem* g_pMapVoteSystem;
-extern CUtlVector<CServerSideClient*>* GetClientList();
 
 CUtlVector<CDetourBase*> g_vecDetours;
 
@@ -535,8 +527,8 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 	GetGlobals()->frametime = flStoreFrametime;
 }
 
-CConVar<bool> g_cvarDisableSubtick("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);
-CConVar<bool> g_cvarDisableSubtickShooting("cs2f_disable_subtick_shooting", FCVAR_NONE, "Whether to disable subtick shooting", false);
+CConVar<bool> g_cvarDisableSubtickMovement("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);
+CConVar<bool> g_cvarDisableSubtickShooting("cs2f_disable_subtick_shooting", FCVAR_NONE, "Whether to disable subtick shooting, experimental (WARNING: add \"log_flags Shooting + DoNotEcho\" to your cfg to prevent console spam on every shot fired)", false);
 
 class CUserCmd
 {
@@ -551,15 +543,27 @@ public:
 
 void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd* cmds, int numcmds, bool paused, float margin)
 {
-	// Push fix only works properly if subtick movement is also disabled
-	if (!g_cvarDisableSubtick.Get() && !g_cvarUseOldPush.Get())
-		return ProcessUsercmds(pController, cmds, numcmds, paused, margin);
-
 	VPROF_SCOPE_BEGIN("Detour_ProcessUsercmds");
 
 	for (int i = 0; i < numcmds; i++)
 	{
-		cmds[i].cmd.mutable_base()->mutable_subtick_moves()->Clear();
+		// Push fix only works properly if subtick movement is also disabled
+		if (g_cvarDisableSubtickMovement.Get() || g_cvarUseOldPush.Get())
+		{
+			auto subtickMoves = cmds[i].cmd.mutable_base()->mutable_subtick_moves();
+			auto iterator = subtickMoves->begin();
+
+			while (iterator != subtickMoves->end())
+			{
+				uint64 button = iterator->button();
+
+				// Remove normal subtick movement inputs by button & subtick movement viewangles by pitch/yaw
+				if ((button >= IN_JUMP && button <= IN_MOVERIGHT && button != IN_USE) || iterator->analog_pitch_delta() != 0.0f || iterator->analog_yaw_delta() != 0.0f)
+					subtickMoves->erase(iterator);
+				else
+					iterator++;
+			}
+		}
 
 		if (g_cvarDisableSubtickShooting.Get())
 		{

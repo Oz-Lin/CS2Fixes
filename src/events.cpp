@@ -38,15 +38,6 @@
 
 #include "tier0/memdbgon.h"
 
-extern IGameEventManager2* g_gameEventManager;
-extern IServerGameClients* g_pSource2GameClients;
-extern CGameEntitySystem* g_pEntitySystem;
-extern CGlobalVars* GetGlobals();
-extern CCSGameRules* g_pGameRules;
-extern IVEngineServer2* g_pEngineServer2;
-
-extern int g_iRoundNum;
-
 CUtlVector<CGameEventListener*> g_vecEventListeners;
 
 void RegisterEventListeners()
@@ -79,11 +70,9 @@ void UnregisterEventListeners()
 
 CConVar<bool> g_cvarPurgeEntityNames("cs2f_purge_entity_strings", FCVAR_NONE, "Whether to purge the EntityNames stringtable on new rounds", false);
 
-extern void FullUpdateAllClients();
-
 GAME_EVENT_F(round_prestart)
 {
-	g_iRoundNum++;
+	RemoveTimers(TIMERFLAG_ROUND);
 
 	if (g_cvarPurgeEntityNames.Get())
 	{
@@ -153,7 +142,7 @@ GAME_EVENT_F(player_spawn)
 	CHandle<CCSPlayerController> hController = pController->GetHandle();
 
 	// Gotta do this on the next frame...
-	new CTimer(0.0f, false, false, [hController]() {
+	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hController]() {
 		CCSPlayerController* pController = hController.Get();
 
 		if (!pController)

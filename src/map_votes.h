@@ -22,11 +22,10 @@
 #include "entity/ccsplayercontroller.h"
 #include "steam/isteamugc.h"
 #include "steam/steam_api_common.h"
-#include "utlqueue.h"
-#include "utlstring.h"
-#include "utlvector.h"
 #undef snprintf
 #include "vendor/nlohmann/json_fwd.hpp"
+#include <deque>
+#include <filesystem>
 #include <playerslot.h>
 #include <string>
 #include <vector>
@@ -161,7 +160,7 @@ public:
 	const char* GetCurrentMapName() { return m_strCurrentMap.c_str(); }
 	void SetCurrentWorkshopMap(uint64 iCurrentWorkshopMap) { m_iCurrentWorkshopMap = iCurrentWorkshopMap; }
 	uint64 GetCurrentWorkshopMap() { return m_iCurrentWorkshopMap; }
-	int GetDownloadQueueSize() { return m_DownloadQueue.Count(); }
+	int GetDownloadQueueSize() { return m_DownloadQueue.size(); }
 	int GetCurrentMapIndex() { return m_iCurrentMapIndex; }
 	void UpdateCurrentMapIndex();
 	int GetMapMinPlayers(int iMapIndex) { return m_vecMapList[iMapIndex]->GetMinPlayers(); }
@@ -170,7 +169,6 @@ public:
 	void ClearInvalidNominations();
 	uint64 GetForcedNextMap() { return m_iForcedNextMap; }
 	std::string GetForcedNextMapName() { return GetForcedNextMap() > GetMapListSize() ? std::to_string(GetForcedNextMap()) : GetMapName(GetForcedNextMap()); }
-	bool ConvertMapListKVToJSON();
 	std::unordered_map<int, int> GetNominatedMaps();
 	void ApplyGameSettings(KeyValues* pKV);
 	void OnLevelShutdown();
@@ -179,7 +177,8 @@ public:
 	std::string StringToLower(std::string sValue);
 	void SetDisabledCooldowns(bool bValue) { g_bDisableCooldowns = bValue; } // Can be used by custom fork features, e.g. an auto-restart
 	void ProcessGroupCooldowns();
-	void ReloadCurrentMap();
+	bool ReloadCurrentMap();
+	bool ReloadMapList(bool bReloadMap = true);
 
 private:
 	int WinningMapIndex();
@@ -188,7 +187,7 @@ private:
 	bool WriteMapCooldownsToFile();
 
 	STEAM_GAMESERVER_CALLBACK_MANUAL(CMapVoteSystem, OnMapDownloaded, DownloadItemResult_t, m_CallbackDownloadItemResult);
-	CUtlQueue<PublishedFileId_t> m_DownloadQueue;
+	std::deque<PublishedFileId_t> m_DownloadQueue;
 
 	std::vector<std::shared_ptr<CMap>> m_vecMapList;
 	std::vector<std::shared_ptr<CGroup>> m_vecGroups;
@@ -205,6 +204,9 @@ private:
 	std::string m_strCurrentMap = "MISSING_MAP";
 	int m_iVoteSize = 0;
 	bool g_bDisableCooldowns = false;
+	std::filesystem::file_time_type m_timeMapListModified = std::filesystem::file_time_type::min();
+	std::weak_ptr<CTimer> m_timerDownloadProgress;
+	std::weak_ptr<CTimer> m_timerRateLimitedDownload;
 };
 
 extern CMapVoteSystem* g_pMapVoteSystem;

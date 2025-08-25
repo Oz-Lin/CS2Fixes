@@ -30,8 +30,6 @@
 #include "schema.h"
 #include "tier1/utlstringtoken.h"
 
-extern CGameConfig* g_GameConfig;
-
 class CGameUI;
 class CEnvHudHint;
 class CPointViewControl;
@@ -232,15 +230,14 @@ public:
 		addresses::CBaseEntity_EmitSoundParams(this, pszSound, nPitch, flVolume, flDelay);
 	}
 
-	SndOpEventGuid_t EmitSoundFilter(IRecipientFilter& filter, const char* pszSound, float flVolume = 1.0, float flPitch = 1.0)
+	StartSoundEventInfo EmitSoundFilter(IRecipientFilter& filter, const char* pszSound, float flVolume = 1.0, float flPitch = 1.0)
 	{
-		uint8_t unk[32];
 		EmitSound_t params;
 		params.m_pSoundName = pszSound;
 		params.m_flVolume = flVolume;
 		params.m_nPitch = flPitch;
 
-		return addresses::CBaseEntity_EmitSoundFilter(unk, filter, entindex(), params);
+		return addresses::CBaseEntity_EmitSoundFilter(filter, entindex(), params);
 	}
 
 	void DispatchParticle(const char* pszParticleName, IRecipientFilter* pFilter, ParticleAttachment_t nAttachType = PATTACH_POINT_FOLLOW,

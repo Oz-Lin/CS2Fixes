@@ -28,10 +28,8 @@
 #include "ctimer.h"
 #include "detours.h"
 #include "discord.h"
-#include "engine/igameeventsystem.h"
 #include "entities.h"
 #include "entity/ccsplayercontroller.h"
-#include "entity/cgamerules.h"
 #include "entity/services.h"
 #include "entitylistener.h"
 #include "entitysystem.h"
@@ -64,11 +62,6 @@
 #include <entity.h>
 
 #include "tier0/memdbgon.h"
-
-double g_flUniversalTime;
-float g_flLastTickedTime;
-bool g_bHasTicked;
-int g_iRoundNum = 0;
 
 void Message(const char* msg, ...)
 {
@@ -129,18 +122,15 @@ SH_DECL_MANUALHOOK3_void(DropWeapon, 0, 0, 0, CBasePlayerWeapon*, Vector*, Vecto
 SH_DECL_HOOK1_void(IServer, SetGameSpawnGroupMgr, SH_NOATTRIB, 0, IGameSpawnGroupMgr*);
 
 CS2Fixes g_CS2Fixes;
-
 IGameEventSystem* g_gameEventSystem = nullptr;
 IGameEventManager2* g_gameEventManager = nullptr;
 CGameEntitySystem* g_pEntitySystem = nullptr;
-CEntityListener* g_pEntityListener = nullptr;
-CPlayerManager* g_playerManager = nullptr;
 IVEngineServer2* g_pEngineServer2 = nullptr;
-CGameConfig* g_GameConfig = nullptr;
 ISteamHTTP* g_http = nullptr;
 CSteamGameServerAPIContext g_steamAPI;
 CCSGameRules* g_pGameRules = nullptr;				  // Will be null between map end & new map startup, null check if necessary!
 CSpawnGroupMgrGameSystem* g_pSpawnGroupMgr = nullptr; // Will be null between map end & new map startup, null check if necessary!
+
 int g_iCGamePlayerEquipUseId = -1;
 int g_iCGamePlayerEquipPrecacheId = -1;
 int g_iCTriggerGravityPrecacheId = -1;
@@ -153,6 +143,10 @@ int g_iGoToIntermissionId = -1;
 int g_iPhysicsTouchShuffle = -1;
 int g_iWeaponServiceDropWeaponId = -1;
 int g_iSetGameSpawnGroupMgrId = -1;
+
+double g_flUniversalTime = 0.0;
+float g_flLastTickedTime = 0.0f;
+bool g_bHasTicked = false;
 
 CGameEntitySystem* GameEntitySystem()
 {
@@ -392,19 +386,19 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 	RegisterWeaponCommands();
 
 	// Check hide distance
-	new CTimer(0.5f, true, true, []() {
+	CTimer::Create(0.5f, TIMERFLAG_NONE, []() {
 		g_playerManager->CheckHideDistances();
 		return 0.5f;
 	});
 
 	// Check for the expiration of infractions like mutes or gags
-	new CTimer(30.0f, true, true, []() {
+	CTimer::Create(30.0f, TIMERFLAG_NONE, []() {
 		g_playerManager->CheckInfractions();
 		return 30.0f;
 	});
 
 	// Check for idle players and kick them if permitted by cs2f_idle_kick_* 'convars'
-	new CTimer(5.0f, true, true, []() {
+	CTimer::Create(5.0f, TIMERFLAG_NONE, []() {
 		g_pIdleSystem->CheckForIdleClients();
 		return 5.0f;
 	});
@@ -483,7 +477,7 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 
 	FlushAllDetours();
 	UndoPatches();
-	RemoveTimers();
+	RemoveAllTimers();
 	UnregisterEventListeners();
 
 	if (g_GameConfig)
@@ -644,7 +638,7 @@ void CS2Fixes::Hook_StartupServer(const GameSessionConfiguration_t& config, ISou
 	RegisterEventListeners();
 
 	if (g_bHasTicked)
-		RemoveMapTimers();
+		RemoveTimers(TIMERFLAG_MAP);
 
 	g_bHasTicked = false;
 
@@ -993,38 +987,9 @@ void CS2Fixes::Hook_GameFramePost(bool simulating, bool bFirstTick, bool bLastTi
 	g_flLastTickedTime = GetGlobals()->curtime;
 	g_bHasTicked = true;
 
-	for (int i = g_timers.Tail(); i != g_timers.InvalidIndex();)
-	{
-		auto timer = g_timers[i];
-
-		int prevIndex = i;
-		i = g_timers.Previous(i);
-
-		if (timer->m_flLastExecute == -1)
-			timer->m_flLastExecute = g_flUniversalTime;
-
-		// Timer execute
-		if (timer->m_flLastExecute + timer->m_flInterval <= g_flUniversalTime)
-		{
-			if ((!timer->m_bPreserveRoundChange && timer->m_iRoundNum != g_iRoundNum) || !timer->Execute())
-			{
-				delete timer;
-				g_timers.Remove(prevIndex);
-			}
-			else
-			{
-				timer->m_flLastExecute = g_flUniversalTime;
-			}
-		}
-	}
-
-	if (g_cvarEnableZR.Get())
-		CZRRegenTimer::Tick();
-
+	RunTimers();
 	EntityHandler_OnGameFramePost(simulating, GetGlobals()->tickcount);
 }
-
-extern CConVar<bool> g_cvarFlashLightTransmitOthers;
 
 void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount, CBitVec<16384>& unionTransmitEdicts,
 								  CBitVec<16384>&, const Entity2Networkable_t** pNetworkables, const uint16* pEntityIndicies, int nEntities)
@@ -1084,11 +1049,9 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 			if (!pPawn)
 				continue;
 
-			// Hide players marked as hidden or ANY dead player, it seems that a ragdoll of a previously hidden player can crash?
-			// TODO: Revert this if/when valve fixes the issue?
-			// Also do not hide leaders to other players
+			// Do not hide leaders or item holders to other players
 			ZEPlayer* pOtherZEPlayer = g_playerManager->GetPlayer(j);
-			if ((pSelfZEPlayer->ShouldBlockTransmit(j) && (pOtherZEPlayer && !pOtherZEPlayer->IsLeader())) || !pPawn->IsAlive())
+			if (pSelfZEPlayer->ShouldBlockTransmit(j) && pOtherZEPlayer && !pOtherZEPlayer->IsLeader() && g_pEWHandler->FindItemInstanceByOwner(j, false, 0) == -1)
 				pInfo->m_pTransmitEntity->Clear(pPawn->entindex());
 		}
 
@@ -1339,7 +1302,6 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 						   bool background)
 {
 	Message("OnLevelInit(%s)\n", pMapName);
-	g_iRoundNum = 0;
 
 	// run our cfg
 	g_pEngineServer2->ServerCommand("exec cs2fixes/cs2fixes");
