@@ -897,7 +897,6 @@ void CMapVoteSystem::OnMapDownloaded(DownloadItemResult_t* pResult)
 
 	if (GetDownloadQueueSize() == 0)
 		return;
-	}
 
 	g_steamAPI.SteamUGC()->DownloadItem(m_DownloadQueue.front(), false);
 }
