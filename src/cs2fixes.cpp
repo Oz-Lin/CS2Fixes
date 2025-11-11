@@ -113,7 +113,7 @@ SH_DECL_MANUALHOOK1_void(CGamePlayerEquipPrecache, 0, 0, 0, CEntityPrecacheConte
 SH_DECL_MANUALHOOK1_void(CTriggerGravityPrecache, 0, 0, 0, CEntityPrecacheContext*);
 SH_DECL_MANUALHOOK1_void(CTriggerGravityEndTouch, 0, 0, 0, CBaseEntity*);
 SH_DECL_MANUALHOOK2_void(CreateWorkshopMapGroup, 0, 0, 0, const char*, const CUtlStringList&);
-SH_DECL_MANUALHOOK1(OnTakeDamage_Alive, 0, 0, 0, bool, CTakeDamageInfoContainer*);
+SH_DECL_MANUALHOOK1(OnTakeDamage_Alive, 0, 0, 0, bool, CTakeDamageResult*);
 SH_DECL_MANUALHOOK1_void(CheckMovingGround, 0, 0, 0, double);
 SH_DECL_HOOK2(IGameEventManager2, LoadEventsFromFile, SH_NOATTRIB, 0, int, const char*, bool);
 SH_DECL_MANUALHOOK1_void(GoToIntermission, 0, 0, 0, bool);
@@ -301,10 +301,10 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 		bRequiredInitLoaded = false;
 	}
 
-	offset = g_GameConfig->GetOffset("CBasePlayerPawn::OnTakeDamage_Alive");
+	offset = g_GameConfig->GetOffset("CCSPlayerPawn::OnTakeDamage_Alive");
 	if (offset == -1)
 	{
-		snprintf(error, maxlen, "Failed to find CBasePlayerPawn::OnTakeDamage_Alive\n");
+		snprintf(error, maxlen, "Failed to find CCSPlayerPawn::OnTakeDamage_Alive\n");
 		bRequiredInitLoaded = false;
 	}
 	SH_MANUALHOOK_RECONFIGURE(OnTakeDamage_Alive, offset, 0, 0);
@@ -513,7 +513,7 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 	if (g_pZRHitgroupConfig)
 		delete g_pZRHitgroupConfig;
 
-	if (g_pEntityListener)
+	if (g_pEntitySystem && g_pEntityListener)
 	{
 		g_pEntitySystem->RemoveListenerEntity(g_pEntityListener);
 		delete g_pEntityListener;
@@ -950,10 +950,14 @@ void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReas
 	Message("Hook_ClientDisconnect(%d, %d, \"%s\", %lli)\n", slot, reason, pszName, xuid);
 
 	CCSPlayerController* player = CCSPlayerController::FromSlot(slot);
-	if (player)
-		ZR_CheckTeamWinConditions(player->m_iTeamNum == CS_TEAM_T ? CS_TEAM_CT : CS_TEAM_T);
-	else if (!ZR_CheckTeamWinConditions(CS_TEAM_T)) // If we cant get team num, just check both
-		ZR_CheckTeamWinConditions(CS_TEAM_CT);
+
+	if (g_cvarEnableZR.Get())
+	{
+		if (player)
+			ZR_CheckTeamWinConditions(player->m_iTeamNum == CS_TEAM_T ? CS_TEAM_CT : CS_TEAM_T);
+		else if (!ZR_CheckTeamWinConditions(CS_TEAM_T)) // If we cant get team num, just check both
+			ZR_CheckTeamWinConditions(CS_TEAM_CT);
+	}
 
 	ZEPlayer* pPlayer = g_playerManager->GetPlayer(slot);
 
@@ -1052,7 +1056,22 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 			// Do not hide leaders or item holders to other players
 			ZEPlayer* pOtherZEPlayer = g_playerManager->GetPlayer(j);
 			if (pSelfZEPlayer->ShouldBlockTransmit(j) && pOtherZEPlayer && !pOtherZEPlayer->IsLeader() && g_pEWHandler->FindItemInstanceByOwner(j, false, 0) == -1)
+			{
 				pInfo->m_pTransmitEntity->Clear(pPawn->entindex());
+
+				if (g_cvarHideWeapons.Get())
+				{
+					auto pVecWeapons = pPawn->m_pWeaponServices->m_hMyWeapons();
+
+					FOR_EACH_VEC(*pVecWeapons, i)
+					{
+						auto pWeapon = (*pVecWeapons)[i].Get();
+
+						if (pWeapon)
+							pInfo->m_pTransmitEntity->Clear(pWeapon->entindex());
+					}
+				}
+			}
 		}
 
 		// Don't transmit glow model to it's owner
@@ -1089,11 +1108,11 @@ void CS2Fixes::Hook_GoToIntermission(bool bAbortedMatch)
 
 CConVar<bool> g_cvarDropMapWeapons("cs2f_drop_map_weapons", FCVAR_NONE, "Whether to force drop map-spawned weapons on death", false);
 
-bool CS2Fixes::Hook_OnTakeDamage_Alive(CTakeDamageInfoContainer* pInfoContainer)
+bool CS2Fixes::Hook_OnTakeDamage_Alive(CTakeDamageResult* pDamageResult)
 {
 	CCSPlayerPawn* pPawn = META_IFACEPTR(CCSPlayerPawn);
 
-	if (g_cvarEnableZR.Get() && ZR_Hook_OnTakeDamage_Alive(pInfoContainer->pInfo, pPawn))
+	if (g_cvarEnableZR.Get() && ZR_Hook_OnTakeDamage_Alive(pDamageResult->m_pOriginatingInfo, pPawn))
 		RETURN_META_VALUE(MRES_SUPERCEDE, false);
 
 	// This is a shit place to be doing this, but player_death event is too late and there is no pre-hook alternative
@@ -1311,6 +1330,10 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 	V_snprintf(cmd, sizeof(cmd), "exec cs2fixes/maps/%s", pMapName);
 	g_pEngineServer2->ServerCommand(cmd);
 
+	// Only patch BotNavIgnore while a map is loaded, else adding bots will crash
+	if (V_strcmp(pMapName, "error"))
+		g_CommonPatches[1].PerformPatch(g_GameConfig);
+
 	g_playerManager->SetupInfiniteAmmo();
 	g_pMapVoteSystem->OnLevelInit(pMapName);
 
@@ -1330,6 +1353,9 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 void CS2Fixes::OnLevelShutdown()
 {
 	Message("OnLevelShutdown()\n");
+
+	// Only patch BotNavIgnore while a map is loaded, else adding bots will crash
+	g_CommonPatches[1].UndoPatch();
 
 	if (g_cvarVoteManagerEnable.Get())
 		g_pMapVoteSystem->OnLevelShutdown();

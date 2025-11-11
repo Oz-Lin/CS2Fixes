@@ -80,11 +80,6 @@ struct AttackerInfo_t
 };
 static_assert(sizeof(AttackerInfo_t) == 20);
 
-// No idea what this is meant to have, but OnTakeDamage_Alive expects this and we only care about pInfo
-struct CTakeDamageInfoContainer
-{
-	CTakeDamageInfo* pInfo;
-};
 class CGameTrace;
 
 class CTakeDamageInfo
@@ -143,9 +138,52 @@ private:
 public:
 	void* m_hScriptInstance;	   // 0xe8 | 232
 	AttackerInfo_t m_AttackerInfo; // 0xf0 | 240
-	bool m_bInTakeDamageFlow;	   // 0x104 | 260
+private:
+	[[maybe_unused]] uint8_t m_nUnknown3[0x1C]; // 0x104 | 260
+
+public:
+	bool m_bInTakeDamageFlow; // 0x120 | 288
 
 private:
-	[[maybe_unused]] int32_t m_nUnknown3; // 0x108 | 264
+	[[maybe_unused]] int32_t m_nUnknown4; // 0x124 | 292
 };
-static_assert(sizeof(CTakeDamageInfo) == 272);
+static_assert(sizeof(CTakeDamageInfo) == 296);
+
+struct CTakeDamageResult
+{
+	CTakeDamageInfo* m_pOriginatingInfo;
+	int32_t m_nHealthLost;
+	int32_t m_nHealthBefore;
+	int32_t m_nDamageDealt;
+	float m_flPreModifiedDamage;
+	int32_t m_nTotalledHealthLost;
+	int32_t m_nTotalledDamageDealt;
+	bool m_bWasDamageSuppressed;
+
+	void CopyFrom(CTakeDamageInfo* pInfo)
+	{
+		m_pOriginatingInfo = pInfo;
+		m_nHealthLost = static_cast<int32_t>(pInfo->m_flDamage);
+		m_nHealthBefore = 0;
+		m_nDamageDealt = static_cast<int32_t>(pInfo->m_flDamage);
+		m_flPreModifiedDamage = pInfo->m_flDamage;
+		m_nTotalledHealthLost = static_cast<int32_t>(pInfo->m_flDamage);
+		m_nTotalledDamageDealt = static_cast<int32_t>(pInfo->m_flDamage);
+		m_bWasDamageSuppressed = false;
+	}
+
+	CTakeDamageResult() = delete;
+
+	constexpr CTakeDamageResult(float damage) :
+		m_pOriginatingInfo(nullptr),
+		m_nHealthLost(static_cast<int32_t>(damage)),
+		m_nHealthBefore(0),
+		m_nDamageDealt(static_cast<int32_t>(damage)),
+		m_flPreModifiedDamage(damage),
+		m_nTotalledHealthLost(static_cast<int32_t>(damage)),
+		m_nTotalledDamageDealt(static_cast<int32_t>(damage)),
+		m_bWasDamageSuppressed(false)
+	{
+	}
+};
+static_assert(sizeof(CTakeDamageResult) == 40);

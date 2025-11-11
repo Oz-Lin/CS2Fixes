@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =============================================================================
  * CS2Fixes
  * Copyright (C) 2023-2025 Source2ZE
@@ -421,7 +421,7 @@ void CZRPlayerClassManager::LoadPlayerClass()
 				m_HumanClassMap.insert(std::make_pair(hashKey, pHumanClass));
 				m_HumanClassKeys.push_back(hashKey);
 
-				if (bTeamDefault)
+				if (bEnabled && bTeamDefault)
 					m_vecHumanDefaultClass.push_back(pHumanClass);
 
 				pHumanClass->PrintInfo();
@@ -451,7 +451,7 @@ void CZRPlayerClassManager::LoadPlayerClass()
 				m_ZombieClassMap.insert(std::make_pair(hashKey, pZombieClass));
 				m_ZombieClassKeys.push_back(hashKey);
 
-				if (bTeamDefault)
+				if (bEnabled && bTeamDefault)
 					m_vecZombieDefaultClass.push_back(pZombieClass);
 
 				pZombieClass->PrintInfo();
@@ -1545,7 +1545,7 @@ void ZR_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args)
 		SpawnPlayer(pController);
 }
 
-void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pInfo, const int32 damage)
+void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pInfo, const int32_t damage)
 {
 	// bullet & knife only
 	if ((!(pInfo->m_bitsDamageType & DMG_BULLET) && !(pInfo->m_bitsDamageType & DMG_SLASH)) || !pInfo->m_pTrace || !pInfo->m_pTrace->m_pHitbox)
