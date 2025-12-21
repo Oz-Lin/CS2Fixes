@@ -40,6 +40,7 @@
 CMapVoteSystem* g_pMapVoteSystem = nullptr;
 
 CConVar<float> g_cvarVoteMapsCooldown("cs2f_vote_maps_cooldown", FCVAR_NONE, "Default number of hours until a map can be played again i.e. cooldown", 6.0f);
+CConVar<float> g_cvarVoteMapsCooldownRng("cs2f_vote_maps_cooldown_rng", FCVAR_NONE, "Randomness range in both directions to apply to map cooldowns", 0.0f);
 CConVar<int> g_cvarVoteMaxNominations("cs2f_vote_max_nominations", FCVAR_NONE, "Number of nominations to include per vote, out of a maximum of 10", 10, true, 0, true, 10);
 CConVar<int> g_cvarVoteMaxMaps("cs2f_vote_max_maps", FCVAR_NONE, "Number of total maps to include per vote, including nominations, out of a maximum of 10", 10, true, 2, true, 10);
 
@@ -607,7 +608,7 @@ std::vector<std::shared_ptr<CMap>> CMapVoteSystem::GetMapsFromSubstring(const ch
 
 void CMapVoteSystem::HandlePlayerMapLookup(CCSPlayerController* pController, std::string strMapSubstring, bool bAdmin, QueryCallback_t callbackSuccess)
 {
-	strMapSubstring = g_pMapVoteSystem->StringToLower(strMapSubstring);
+	strMapSubstring = StringToLower(strMapSubstring);
 	const char* pszMapSubstring = strMapSubstring.c_str();
 	auto vecFoundMaps = GetMapsFromSubstring(pszMapSubstring);
 
@@ -1212,14 +1213,6 @@ std::string CMapVoteSystem::ConvertFloatToString(float fValue, int precision)
 	return str;
 }
 
-std::string CMapVoteSystem::StringToLower(std::string strValue)
-{
-	for (int i = 0; strValue[i]; i++)
-		strValue[i] = tolower(strValue[i]);
-
-	return strValue;
-}
-
 std::string CMapVoteSystem::GetMapCooldownText(const char* pszMapName, bool bPlural)
 {
 	std::shared_ptr<CCooldown> pCooldown = GetMapCooldown(pszMapName);
@@ -1270,6 +1263,17 @@ void CMapVoteSystem::PutMapOnCooldown(const char* pszMapName, float fCooldown)
 			fCooldown = pMap->GetCustomCooldown();
 		else
 			fCooldown = g_cvarVoteMapsCooldown.Get();
+
+		// Add randomness if applicable
+		if (g_cvarVoteMapsCooldown.Get() != 0.0f)
+		{
+			float flRandomValue = ((float)rand() / RAND_MAX) * g_cvarVoteMapsCooldownRng.Get();
+
+			if (rand() % 2)
+				fCooldown += flRandomValue;
+			else
+				fCooldown -= flRandomValue;
+		}
 	}
 
 	time_t timeCooldown = std::time(0) + (time_t)(fCooldown * 60 * 60);
