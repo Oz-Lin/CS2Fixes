@@ -19,17 +19,18 @@
 
 #pragma once
 
-#include "playerslot.h"
-#include "utlvector.h"
-#include <string>
+#include "commands.h"
 
-class CServerSideClient;
+#define TD_PREFIX " \4[TopDefender]\1 "
 
-void Message(const char*, ...);
-void Panic(const char*, ...);
+extern CConVar<bool> g_cvarEnableTopDefender;
+extern CConVar<CUtlString> g_cvarTopDefenderChatTag;
+extern CConVar<CUtlString> g_cvarTopDefenderNameColor;
+extern CConVar<CUtlString> g_cvarTopDefenderChatColor;
 
-CUtlVector<CServerSideClient*>* GetClientList();
-CServerSideClient* GetClientBySlot(CPlayerSlot slot);
+void TD_OnPlayerHurt(IGameEvent* pEvent);
+void TD_OnPlayerDeath(IGameEvent* pEvent);
+void TD_OnRoundStart(IGameEvent* pEvent);
+void TD_OnRoundEnd(IGameEvent* pEvent);
 
-uint32 GetSoundEventHash(const char* pszSoundEventName);
-std::string StringToLower(std::string strValue);
+void TopDefenderSearch(CCSPlayerController* player, const CCommand& args);
