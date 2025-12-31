@@ -1047,33 +1047,33 @@ void CS2Fixes::Hook_GoToIntermission(bool bAbortedMatch)
 
 CConVar<bool> g_cvarDropMapWeapons("cs2f_drop_map_weapons", FCVAR_NONE, "Whether to force drop map-spawned weapons on death", false);
 
-bool CS2Fixes::Hook_OnTakeDamage_Alive(CTakeDamageResult* pDamageResult)
-{
-	CCSPlayerPawn* pPawn = META_IFACEPTR(CCSPlayerPawn);
-
-	if (g_cvarEnableZR.Get() && ZR_Hook_OnTakeDamage_Alive(pDamageResult->m_pOriginatingInfo, pPawn))
-	{
-		pDamageResult->m_bWasDamageSuppressed = true;
-		pDamageResult->m_nDamageDealt = 0;
-		RETURN_META_VALUE(MRES_SUPERCEDE, false);
-	}
-
-	// This is a shit place to be doing this, but player_death event is too late and there is no pre-hook alternative
-	// Check if this is going to kill the player
-	if (g_cvarDropMapWeapons.Get() && pPawn && pPawn->m_iHealth() <= 0)
-	{
-		if (g_cvarEnableEntWatch.Get())
-		{
-			CCSPlayerController* pController = pPawn->GetOriginalController();
-			if (pController)
-				EW_PlayerDeathPre(pController);
-		}
-
-		pPawn->DropMapWeapons();
-	}
-
-	RETURN_META_VALUE(MRES_IGNORED, true);
-}
+//bool CS2Fixes::Hook_OnTakeDamage_Alive(CTakeDamageResult* pDamageResult)
+//{
+//	CCSPlayerPawn* pPawn = META_IFACEPTR(CCSPlayerPawn);
+//
+//	if (g_cvarEnableZR.Get() && ZR_Hook_OnTakeDamage_Alive(pDamageResult->m_pOriginatingInfo, pPawn))
+//	{
+//		pDamageResult->m_bWasDamageSuppressed = true;
+//		pDamageResult->m_nDamageDealt = 0;
+//		RETURN_META_VALUE(MRES_SUPERCEDE, false);
+//	}
+//
+//	// This is a shit place to be doing this, but player_death event is too late and there is no pre-hook alternative
+//	// Check if this is going to kill the player
+//	if (g_cvarDropMapWeapons.Get() && pPawn && pPawn->m_iHealth() <= 0)
+//	{
+//		if (g_cvarEnableEntWatch.Get())
+//		{
+//			CCSPlayerController* pController = pPawn->GetOriginalController();
+//			if (pController)
+//				EW_PlayerDeathPre(pController);
+//		}
+//
+//		pPawn->DropMapWeapons();
+//	}
+//
+//	RETURN_META_VALUE(MRES_IGNORED, true);
+//}
 
 CConVar<bool> g_cvarFixPhysicsPlayerShuffle("cs2f_shuffle_player_physics_sim", FCVAR_NONE, "Whether to enable shuffle player list in physics simulate", false);
 
