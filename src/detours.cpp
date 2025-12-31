@@ -60,7 +60,7 @@ DECLARE_DETOUR(UTIL_SayTextFilter, Detour_UTIL_SayTextFilter);
 DECLARE_DETOUR(UTIL_SayText2Filter, Detour_UTIL_SayText2Filter);
 DECLARE_DETOUR(IsHearingClient, Detour_IsHearingClient);
 DECLARE_DETOUR(TriggerPush_Touch, Detour_TriggerPush_Touch);
-DECLARE_DETOUR(CBaseEntity_TakeDamageOld, Detour_CBaseEntity_TakeDamageOld);
+//DECLARE_DETOUR(CBaseEntity_TakeDamageOld, Detour_CBaseEntity_TakeDamageOld);
 DECLARE_DETOUR(CCSPlayer_WeaponServices_CanUse, Detour_CCSPlayer_WeaponServices_CanUse);
 DECLARE_DETOUR(CCSPlayer_WeaponServices_EquipWeapon, Detour_CCSPlayer_WeaponServices_EquipWeapon);
 DECLARE_DETOUR(CEntityIdentity_AcceptInput, Detour_CEntityIdentity_AcceptInput);
