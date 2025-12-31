@@ -333,8 +333,8 @@ CON_COMMAND_CHAT_FLAGS(slap, "<name> [damage] - Slap a player", ADMFLAG_SLAY)
 			if (player)
 				pAttacker = player->GetPlayerPawn();
 
-			CTakeDamageInfo info(pAttacker, pAttacker, nullptr, flDamage, DMG_GENERIC);
-			pPawn->TakeDamage(info);
+			//CTakeDamageInfo info(pAttacker, pAttacker, nullptr, flDamage, DMG_GENERIC);
+			//pPawn->TakeDamage(info);
 		}
 
 		if (iNumClients == 1)

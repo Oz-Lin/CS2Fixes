@@ -561,13 +561,13 @@ bool IgnitePawn(CCSPlayerPawn* pPawn, float flDuration, CBaseEntity* pInflictor,
 			return -1.f;
 		}
 
-		CTakeDamageInfo info(hInflictor, hAttacker, hAbility, g_cvarBurnDamage.Get(), nDamageType);
+		//CTakeDamageInfo info(hInflictor, hAttacker, hAbility, g_cvarBurnDamage.Get(), nDamageType);
 
 		// Damage doesn't apply if the inflictor is null
-		if (!hInflictor.Get())
-			info.m_hInflictor.Set(hAttacker);
+		//if (!hInflictor.Get())
+		//	info.m_hInflictor.Set(hAttacker);
 
-		pPawn->TakeDamage(info);
+		//pPawn->TakeDamage(info);
 
 		pPawn->m_flVelocityModifier = g_cvarBurnSlowdown.Get();
 

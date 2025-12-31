@@ -89,73 +89,73 @@ CConVar<bool> g_cvarBlockMolotovSelfDmg("cs2f_block_molotov_self_dmg", FCVAR_NON
 CConVar<bool> g_cvarBlockAllDamage("cs2f_block_all_dmg", FCVAR_NONE, "Whether to block all damage to players", false);
 CConVar<bool> g_cvarFixBlockDamage("cs2f_fix_block_dmg", FCVAR_NONE, "Whether to fix block-damage on players", false);
 
-int64 FASTCALL Detour_CBaseEntity_TakeDamageOld(CBaseEntity* pThis, CTakeDamageInfo* pInfo, CTakeDamageResult* pResult)
-{
-	// NOTE valve always return 1 here, since 2025/10/15 update.
-
-#ifdef _DEBUG
-	Message("\n--------------------------------\n"
-			"TakeDamage on %s\n"
-			"Attacker: %s\n"
-			"Inflictor: %s\n"
-			"Ability: %s\n"
-			"Damage: %.2f\n"
-			"Damage Type: %i\n"
-			"--------------------------------\n",
-			pThis->GetClassname(),
-			pInfo->m_hAttacker.Get() ? pInfo->m_hAttacker.Get()->GetClassname() : "NULL",
-			pInfo->m_hInflictor.Get() ? pInfo->m_hInflictor.Get()->GetClassname() : "NULL",
-			pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "NULL",
-			pInfo->m_flDamage,
-			pInfo->m_bitsDamageType);
-#endif
-
-	// Block all player damage if desired
-	if (g_cvarBlockAllDamage.Get() && pThis->IsPawn())
-		return 1;
-
-	CEntityInstance* pInflictor = pInfo->m_hInflictor.Get();
-	const char* pszInflictorClass = pInflictor ? pInflictor->GetClassname() : "";
-
-	// After Armory update, activator became attacker on block damage, which broke it..
-	if (g_cvarFixBlockDamage.Get() && pInfo->m_AttackerInfo.m_bIsPawn && pInfo->m_bitsDamageType ^ DMG_BULLET && pInfo->m_hAttacker != pThis->GetHandle())
-	{
-		if (V_strcasecmp(pszInflictorClass, "func_movelinear") == 0
-			|| V_strcasecmp(pszInflictorClass, "func_mover") == 0
-			|| V_strcasecmp(pszInflictorClass, "func_door") == 0
-			|| V_strcasecmp(pszInflictorClass, "func_door_rotating") == 0
-			|| V_strcasecmp(pszInflictorClass, "func_rotating") == 0
-			|| V_strcasecmp(pszInflictorClass, "point_hurt") == 0)
-		{
-			pInfo->m_AttackerInfo.m_bIsPawn = false;
-			pInfo->m_AttackerInfo.m_bIsWorld = true;
-			pInfo->m_hAttacker = pInfo->m_hInflictor;
-
-			pInfo->m_AttackerInfo.m_hAttackerPawn = CHandle<CCSPlayerPawn>(~0u);
-			pInfo->m_AttackerInfo.m_nAttackerPlayerSlot = ~0;
-		}
-	}
-
-	// Prevent molly on self
-	if (g_cvarBlockMolotovSelfDmg.Get() && pInfo->m_hAttacker == pThis && !V_strncmp(pszInflictorClass, "inferno", 7))
-		return 1;
-
-	// maybe call in flow
-	CTakeDamageResult damageResult(0);
-
-	if (pResult == nullptr)
-	{
-		damageResult.CopyFrom(pInfo);
-		pResult = &damageResult;
-	}
-
-	CBaseEntity_TakeDamageOld(pThis, pInfo, pResult);
-
-	if (pResult->m_nDamageDealt > 0 && !pResult->m_bWasDamageSuppressed && g_cvarEnableZR.Get() && pThis->IsPawn())
-		ZR_OnPlayerTakeDamage(reinterpret_cast<CCSPlayerPawn*>(pThis), pInfo, pResult->m_nDamageDealt);
-
-	return 1;
-}
+//int64 FASTCALL Detour_CBaseEntity_TakeDamageOld(CBaseEntity* pThis, CTakeDamageInfo* pInfo, CTakeDamageResult* pResult)
+//{
+//	// NOTE valve always return 1 here, since 2025/10/15 update.
+//
+//#ifdef _DEBUG
+//	Message("\n--------------------------------\n"
+//			"TakeDamage on %s\n"
+//			"Attacker: %s\n"
+//			"Inflictor: %s\n"
+//			"Ability: %s\n"
+//			"Damage: %.2f\n"
+//			"Damage Type: %i\n"
+//			"--------------------------------\n",
+//			pThis->GetClassname(),
+//			pInfo->m_hAttacker.Get() ? pInfo->m_hAttacker.Get()->GetClassname() : "NULL",
+//			pInfo->m_hInflictor.Get() ? pInfo->m_hInflictor.Get()->GetClassname() : "NULL",
+//			pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "NULL",
+//			pInfo->m_flDamage,
+//			pInfo->m_bitsDamageType);
+//#endif
+//
+//	// Block all player damage if desired
+//	if (g_cvarBlockAllDamage.Get() && pThis->IsPawn())
+//		return 1;
+//
+//	CEntityInstance* pInflictor = pInfo->m_hInflictor.Get();
+//	const char* pszInflictorClass = pInflictor ? pInflictor->GetClassname() : "";
+//
+//	// After Armory update, activator became attacker on block damage, which broke it..
+//	if (g_cvarFixBlockDamage.Get() && pInfo->m_AttackerInfo.m_bIsPawn && pInfo->m_bitsDamageType ^ DMG_BULLET && pInfo->m_hAttacker != pThis->GetHandle())
+//	{
+//		if (V_strcasecmp(pszInflictorClass, "func_movelinear") == 0
+//			|| V_strcasecmp(pszInflictorClass, "func_mover") == 0
+//			|| V_strcasecmp(pszInflictorClass, "func_door") == 0
+//			|| V_strcasecmp(pszInflictorClass, "func_door_rotating") == 0
+//			|| V_strcasecmp(pszInflictorClass, "func_rotating") == 0
+//			|| V_strcasecmp(pszInflictorClass, "point_hurt") == 0)
+//		{
+//			pInfo->m_AttackerInfo.m_bIsPawn = false;
+//			pInfo->m_AttackerInfo.m_bIsWorld = true;
+//			pInfo->m_hAttacker = pInfo->m_hInflictor;
+//
+//			pInfo->m_AttackerInfo.m_hAttackerPawn = CHandle<CCSPlayerPawn>(~0u);
+//			pInfo->m_AttackerInfo.m_nAttackerPlayerSlot = ~0;
+//		}
+//	}
+//
+//	// Prevent molly on self
+//	if (g_cvarBlockMolotovSelfDmg.Get() && pInfo->m_hAttacker == pThis && !V_strncmp(pszInflictorClass, "inferno", 7))
+//		return 1;
+//
+//	// maybe call in flow
+//	CTakeDamageResult damageResult(0);
+//
+//	if (pResult == nullptr)
+//	{
+//		damageResult.CopyFrom(pInfo);
+//		pResult = &damageResult;
+//	}
+//
+//	CBaseEntity_TakeDamageOld(pThis, pInfo, pResult);
+//
+//	if (pResult->m_nDamageDealt > 0 && !pResult->m_bWasDamageSuppressed && g_cvarEnableZR.Get() && pThis->IsPawn())
+//		ZR_OnPlayerTakeDamage(reinterpret_cast<CCSPlayerPawn*>(pThis), pInfo, pResult->m_nDamageDealt);
+//
+//	return 1;
+//}
 
 CConVar<bool> g_cvarUseOldPush("cs2f_use_old_push", FCVAR_NONE, "Whether to use the old CSGO trigger_push behavior", false);
 CConVar<bool> g_cvarLogPushes("cs2f_log_pushes", FCVAR_NONE, "Whether to log pushes (cs2f_use_old_push must be enabled)", false);

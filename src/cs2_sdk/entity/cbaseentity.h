@@ -22,7 +22,7 @@
 #include "../../gameconfig.h"
 #include "../detours.h"
 #include "ccollisionproperty.h"
-#include "ctakedamageinfo.h"
+//#include "ctakedamageinfo.h"
 #include "ehandle.h"
 #include "entitykeyvalues.h"
 #include "globaltypes.h"
@@ -169,10 +169,10 @@ public:
 		addresses::CEntityIdentity_SetEntityName(m_pEntity, pName);
 	}
 
-	void TakeDamage(CTakeDamageInfo& info)
-	{
-		Detour_CBaseEntity_TakeDamageOld(this, &info, 0);
-	}
+	//void TakeDamage(CTakeDamageInfo& info)
+	//{
+	//	Detour_CBaseEntity_TakeDamageOld(this, &info, 0);
+	//}
 
 	void Teleport(const Vector* position, const QAngle* angles, const Vector* velocity)
 	{

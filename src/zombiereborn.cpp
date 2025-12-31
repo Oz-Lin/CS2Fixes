@@ -1404,50 +1404,50 @@ void ZR_StartInitialCountdown()
 	});
 }
 
-bool ZR_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPawn)
-{
-	CCSPlayerPawn* pAttackerPawn = (CCSPlayerPawn*)pInfo->m_hAttacker.Get();
-
-	if (!(pAttackerPawn && pVictimPawn && pAttackerPawn->IsPawn() && pVictimPawn->IsPawn()))
-		return false;
-
-	CCSPlayerController* pAttackerController = CCSPlayerController::FromPawn(pAttackerPawn);
-	CCSPlayerController* pVictimController = CCSPlayerController::FromPawn(pVictimPawn);
-	const char* pszAbilityClass = pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "";
-	if (pAttackerPawn->m_iTeamNum() == CS_TEAM_T && pVictimPawn->m_iTeamNum() == CS_TEAM_CT && !V_strncmp(pszAbilityClass, "weapon_knife", 12))
-	{
-		ZR_Infect(pAttackerController, pVictimController, false);
-		return true; // nullify the damage
-	}
-
-	if (g_cvarGroanChance.Get() && pVictimPawn->m_iTeamNum() == CS_TEAM_T && (rand() % g_cvarGroanChance.Get()) == 1)
-		pVictimPawn->EmitSound("zr.amb.zombie_pain");
-
-	// grenade and molotov knockback
-	if (pAttackerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
-	{
-		CEntityInstance* pInflictor = pInfo->m_hInflictor.Get();
-		const char* pszInflictorClass = pInflictor ? pInflictor->GetClassname() : "";
-		// inflictor class from grenade damage is actually hegrenade_projectile
-		bool bGrenade = V_strncmp(pszInflictorClass, "hegrenade", 9) == 0;
-		bool bInferno = V_strncmp(pszInflictorClass, "inferno", 7) == 0;
-
-		if (g_cvarNapalmGrenades.Get() && bGrenade)
-		{
-			// Scale burn duration by damage, so nades from farther away burn zombies for less time
-			float flDuration = (pInfo->m_flDamage / g_cvarNapalmFullDamage.Get()) * g_cvarNapalmDuration.Get();
-			flDuration = clamp(flDuration, 0.0f, g_cvarNapalmDuration.Get());
-
-			// Can't use the same inflictor here as it'll end up calling this again each burn damage tick
-			// DMG_BURN makes loud noises so use DMG_FALL instead which is completely silent
-			IgnitePawn(pVictimPawn, flDuration, pAttackerPawn, pAttackerPawn, nullptr, DMG_FALL);
-		}
-
-		if (bGrenade || bInferno)
-			ZR_ApplyKnockbackExplosion((CBaseEntity*)pInflictor, (CCSPlayerPawn*)pVictimPawn, (int)pInfo->m_flDamage, bInferno);
-	}
-	return false;
-}
+//bool ZR_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPawn)
+//{
+//	CCSPlayerPawn* pAttackerPawn = (CCSPlayerPawn*)pInfo->m_hAttacker.Get();
+//
+//	if (!(pAttackerPawn && pVictimPawn && pAttackerPawn->IsPawn() && pVictimPawn->IsPawn()))
+//		return false;
+//
+//	CCSPlayerController* pAttackerController = CCSPlayerController::FromPawn(pAttackerPawn);
+//	CCSPlayerController* pVictimController = CCSPlayerController::FromPawn(pVictimPawn);
+//	const char* pszAbilityClass = pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "";
+//	if (pAttackerPawn->m_iTeamNum() == CS_TEAM_T && pVictimPawn->m_iTeamNum() == CS_TEAM_CT && !V_strncmp(pszAbilityClass, "weapon_knife", 12))
+//	{
+//		ZR_Infect(pAttackerController, pVictimController, false);
+//		return true; // nullify the damage
+//	}
+//
+//	if (g_cvarGroanChance.Get() && pVictimPawn->m_iTeamNum() == CS_TEAM_T && (rand() % g_cvarGroanChance.Get()) == 1)
+//		pVictimPawn->EmitSound("zr.amb.zombie_pain");
+//
+//	// grenade and molotov knockback
+//	if (pAttackerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
+//	{
+//		CEntityInstance* pInflictor = pInfo->m_hInflictor.Get();
+//		const char* pszInflictorClass = pInflictor ? pInflictor->GetClassname() : "";
+//		// inflictor class from grenade damage is actually hegrenade_projectile
+//		bool bGrenade = V_strncmp(pszInflictorClass, "hegrenade", 9) == 0;
+//		bool bInferno = V_strncmp(pszInflictorClass, "inferno", 7) == 0;
+//
+//		if (g_cvarNapalmGrenades.Get() && bGrenade)
+//		{
+//			// Scale burn duration by damage, so nades from farther away burn zombies for less time
+//			float flDuration = (pInfo->m_flDamage / g_cvarNapalmFullDamage.Get()) * g_cvarNapalmDuration.Get();
+//			flDuration = clamp(flDuration, 0.0f, g_cvarNapalmDuration.Get());
+//
+//			// Can't use the same inflictor here as it'll end up calling this again each burn damage tick
+//			// DMG_BURN makes loud noises so use DMG_FALL instead which is completely silent
+//			IgnitePawn(pVictimPawn, flDuration, pAttackerPawn, pAttackerPawn, nullptr, DMG_FALL);
+//		}
+//
+//		if (bGrenade || bInferno)
+//			ZR_ApplyKnockbackExplosion((CBaseEntity*)pInflictor, (CCSPlayerPawn*)pVictimPawn, (int)pInfo->m_flDamage, bInferno);
+//	}
+//	return false;
+//}
 
 // can prevent purchasing and picking it up
 AcquireResult ZR_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices* pItemServices, CEconItemView* pEconItem)
@@ -1545,55 +1545,55 @@ void ZR_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args)
 		SpawnPlayer(pController);
 }
 
-void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pInfo, const int32_t damage)
-{
-	// bullet & knife only
-	if ((!(pInfo->m_bitsDamageType & DMG_BULLET) && !(pInfo->m_bitsDamageType & DMG_SLASH)) || !pInfo->m_pTrace || !pInfo->m_pTrace->m_pHitbox)
-		return;
-
-	const auto pVictimController = reinterpret_cast<CCSPlayerController*>(pVictimPawn->GetController());
-	if (!pVictimController || !pVictimController->IsConnected())
-		return;
-
-	if (!pInfo->m_AttackerInfo.m_bIsPawn)
-		return;
-
-	const auto pKillerPawn = pInfo->m_AttackerInfo.m_hAttackerPawn.Get();
-	if (!pKillerPawn || !pKillerPawn->IsPawn()) // I don't know why this maybe non-pawn entity??
-		return;
-
-	const auto pAbility = pInfo->m_hAbility.Get();
-	if (!pAbility)
-		return;
-
-	const char* pszWeapon = pAbility->GetClassname();
-
-	if (!V_strncasecmp(pszWeapon, "weapon_", 7))
-		pszWeapon = reinterpret_cast<CBasePlayerWeapon*>(pAbility)->GetWeaponClassname();
-
-	if (pKillerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
-	{
-		auto flClassKnockback = 1.0f;
-		float flCashScale = g_cvarDamageCashScale.Get();
-
-		if (flCashScale > 0)
-		{
-			const auto pKillerController = pKillerPawn->GetOriginalController();
-			int money = pKillerController->m_pInGameMoneyServices->m_iAccount;
-			pKillerController->m_pInGameMoneyServices->m_iAccount = money + (damage * flCashScale);
-		}
-
-		if (pVictimController->GetZEPlayer())
-		{
-			std::shared_ptr<ZRClass> activeClass = pVictimController->GetZEPlayer()->GetActiveZRClass();
-
-			if (activeClass && activeClass->iTeam == CS_TEAM_T)
-				flClassKnockback = static_pointer_cast<ZRZombieClass>(activeClass)->flKnockback;
-		}
-
-		ZR_ApplyKnockback(pKillerPawn, pVictimPawn, damage, pszWeapon, pInfo->m_pTrace->m_pHitbox->m_nGroupId, flClassKnockback);
-	}
-}
+//void ZR_OnPlayerTakeDamage(CCSPlayerPawn* pVictimPawn, const CTakeDamageInfo* pInfo, const int32_t damage)
+//{
+//	// bullet & knife only
+//	if ((!(pInfo->m_bitsDamageType & DMG_BULLET) && !(pInfo->m_bitsDamageType & DMG_SLASH)) || !pInfo->m_pTrace || !pInfo->m_pTrace->m_pHitbox)
+//		return;
+//
+//	const auto pVictimController = reinterpret_cast<CCSPlayerController*>(pVictimPawn->GetController());
+//	if (!pVictimController || !pVictimController->IsConnected())
+//		return;
+//
+//	if (!pInfo->m_AttackerInfo.m_bIsPawn)
+//		return;
+//
+//	const auto pKillerPawn = pInfo->m_AttackerInfo.m_hAttackerPawn.Get();
+//	if (!pKillerPawn || !pKillerPawn->IsPawn()) // I don't know why this maybe non-pawn entity??
+//		return;
+//
+//	const auto pAbility = pInfo->m_hAbility.Get();
+//	if (!pAbility)
+//		return;
+//
+//	const char* pszWeapon = pAbility->GetClassname();
+//
+//	if (!V_strncasecmp(pszWeapon, "weapon_", 7))
+//		pszWeapon = reinterpret_cast<CBasePlayerWeapon*>(pAbility)->GetWeaponClassname();
+//
+//	if (pKillerPawn->m_iTeamNum() == CS_TEAM_CT && pVictimPawn->m_iTeamNum() == CS_TEAM_T)
+//	{
+//		auto flClassKnockback = 1.0f;
+//		float flCashScale = g_cvarDamageCashScale.Get();
+//
+//		if (flCashScale > 0)
+//		{
+//			const auto pKillerController = pKillerPawn->GetOriginalController();
+//			int money = pKillerController->m_pInGameMoneyServices->m_iAccount;
+//			pKillerController->m_pInGameMoneyServices->m_iAccount = money + (damage * flCashScale);
+//		}
+//
+//		if (pVictimController->GetZEPlayer())
+//		{
+//			std::shared_ptr<ZRClass> activeClass = pVictimController->GetZEPlayer()->GetActiveZRClass();
+//
+//			if (activeClass && activeClass->iTeam == CS_TEAM_T)
+//				flClassKnockback = static_pointer_cast<ZRZombieClass>(activeClass)->flKnockback;
+//		}
+//
+//		ZR_ApplyKnockback(pKillerPawn, pVictimPawn, damage, pszWeapon, pInfo->m_pTrace->m_pHitbox->m_nGroupId, flClassKnockback);
+//	}
+//}
 
 void ZR_OnPlayerDeath(IGameEvent* pEvent)
 {
