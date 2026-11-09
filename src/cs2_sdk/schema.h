@@ -1,7 +1,7 @@
 ﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -32,6 +32,8 @@
 
 #include "../addresses.h"
 #include "const.h"
+#include "networksystem/networkvar.h"
+#include "schemasystem/schemasystem.h"
 #include "stdint.h"
 #include "tier0/dbg.h"
 #include "virtual.h"
@@ -41,21 +43,7 @@ struct SchemaKey
 {
 	int32 offset;
 	bool networked;
-};
-
-class CNetworkVarChainer
-{
-public:
-	CEntityInstance* m_pEntity;
-
-private:
-	uint8 pad_0000[24];
-
-public:
-	ChangeAccessorFieldPathIndex_t m_PathIndex;
-
-private:
-	uint8 pad_0024[4];
+	SchemaCollectionManipulatorFn_t manipulator = nullptr;
 };
 
 void EntityNetworkStateChanged(uintptr_t pEntity, uint nOffset);
@@ -66,6 +54,7 @@ namespace schema
 {
 	int16_t FindChainOffset(const char* className, uint32_t classNameHash);
 	SchemaKey GetOffset(const char* className, uint32_t classKey, const char* memberName, uint32_t memberKey);
+	SchemaClassInfoData_t* GetSchemaClassInfo(const char* className);
 } // namespace schema
 
 constexpr uint32_t val_32_const = 0x811c9dc5;
@@ -193,6 +182,11 @@ inline constexpr uint64_t hash_64_fnv1a_const(const char* const str, const uint6
 					::NetworkVarStateChanged(pThisClass, m_key.offset + extra_offset, m_networkStateChangedOffset); \
 			}                                                                                                       \
 		}                                                                                                           \
+		SchemaCollectionManipulatorFn_t GetManipulator()                                                            \
+		{                                                                                                           \
+			static const auto m_key = schema::GetOffset(m_className, m_classNameHash, #varName, m_varNameHash);     \
+			return m_key.manipulator;                                                                               \
+		}                                                                                                           \
 		operator type*()                                                                                            \
 		{                                                                                                           \
 			return Get();                                                                                           \
@@ -221,14 +215,27 @@ inline constexpr uint64_t hash_64_fnv1a_const(const char* const str, const uint6
 	SCHEMA_FIELD_POINTER_OFFSET(type, varName, 0)
 
 // If the class needs a specific offset for its NetworkStateChanged (like CEconItemView), use this and provide the offset
-#define DECLARE_SCHEMA_CLASS_BASE(ClassName, offset)                             \
-private:                                                                         \
-	typedef ClassName ThisClass;                                                 \
-	static constexpr const char* m_className = #ClassName;                       \
-	static constexpr uint32_t m_classNameHash = hash_32_fnv1a_const(#ClassName); \
-	static constexpr int m_networkStateChangedOffset = offset;                   \
-                                                                                 \
-public:
+#define DECLARE_SCHEMA_CLASS_BASE(ClassName, offset)                                                      \
+private:                                                                                                  \
+	typedef ClassName ThisClass;                                                                          \
+	static constexpr const char* m_className = #ClassName;                                                \
+	static constexpr uint32_t m_classNameHash = hash_32_fnv1a_const(#ClassName);                          \
+	static constexpr int m_networkStateChangedOffset = offset;                                            \
+                                                                                                          \
+public:                                                                                                   \
+	static ThisClass* Create()                                                                            \
+	{                                                                                                     \
+		static auto pClassInfo = schema::GetSchemaClassInfo(m_className);                                 \
+		static auto pfnManipulator = pClassInfo->m_pClassOpsFn;                                           \
+		ThisClass* pThis = (ThisClass*)pfnManipulator(SCHEMA_CLASS_MANIPULATOR_ACTION_ALLOCATE, nullptr); \
+		return pThis;                                                                                     \
+	}                                                                                                     \
+	void Construct()                                                                                      \
+	{                                                                                                     \
+		static auto pClassInfo = schema::GetSchemaClassInfo(m_className);                                 \
+		static auto pfnManipulator = pClassInfo->m_pClassOpsFn;                                           \
+		pfnManipulator(SCHEMA_CLASS_MANIPULATOR_ACTION_CONSTRUCT_IN_PLACE, this);                         \
+	}
 
 #define DECLARE_SCHEMA_CLASS(className) DECLARE_SCHEMA_CLASS_BASE(className, 0)
 

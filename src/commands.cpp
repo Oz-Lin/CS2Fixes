@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,15 +21,15 @@
 #include "adminsystem.h"
 #include "common.h"
 #include "ctimer.h"
-#include "detours.h"
 #include "discord.h"
-#include "engine/igameeventsystem.h"
+#include "engine2/igameeventsystem.h"
+#include "engine2/ivengineserver2.h"
 #include "entity/cbaseentity.h"
-#include "entity/cbasemodelentity.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
 #include "entity/ccsweaponbase.h"
 #include "entity/cparticlesystem.h"
+#include "entity/customhudlayout.h"
 #include "entity/lights.h"
 #include "httpmanager.h"
 #include "leader.h"
@@ -39,7 +39,6 @@
 #include "tier0/vprof.h"
 #include "usermessages.pb.h"
 #include "utils/entity.h"
-#include "utlstring.h"
 #include "zombiereborn.h"
 #undef snprintf
 #include "vendor/nlohmann/json.hpp"
@@ -172,9 +171,8 @@ void ParseWeaponCommand(const CCommand& args, CCSPlayerController* player)
 
 	CUtlVector<WeaponPurchaseCount_t>* weaponPurchases = pPawn->m_pActionTrackingServices->m_weaponPurchasesThisRound().m_weaponPurchases;
 	bool found = false;
-	FOR_EACH_VEC(*weaponPurchases, i)
+	for (WeaponPurchaseCount_t& purchase : *weaponPurchases)
 	{
-		WeaponPurchaseCount_t& purchase = (*weaponPurchases)[i];
 		if (purchase.m_nItemDefIndex == pWeaponInfo->m_iItemDefinitionIndex)
 		{
 			// Note ammo_grenade_limit_total is not followed here, only for checking inventory space
@@ -199,9 +197,9 @@ void ParseWeaponCommand(const CCommand& args, CCSPlayerController* player)
 	{
 		CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pWeaponServices->m_hMyWeapons();
 
-		FOR_EACH_VEC(*weapons, i)
+		for (const auto& hWeapon : *weapons)
 		{
-			CBasePlayerWeapon* weapon = (*weapons)[i].Get();
+			CBasePlayerWeapon* weapon = hWeapon.Get();
 
 			if (!weapon)
 				continue;
@@ -430,8 +428,7 @@ CON_COMMAND_CHAT(noshake, "- toggle noshake")
 	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You have %s noshake.", bSet ? "enabled" : "disabled");
 }
 
-CConVar<bool> g_cvarEnableHide("cs2f_hide_enable", FCVAR_NONE, "Whether to enable hide (WARNING: randomly crashes clients since 2023-12-13 CS2 update)", false);
-CConVar<bool> g_cvarHideWeapons("cs2f_hide_weapons", FCVAR_NONE, "Whether to hide weapons along with their holders", false);
+CConVar<bool> g_cvarEnableHide("cs2f_hide_enable", FCVAR_NONE, "Whether to enable hide", false);
 CConVar<int> g_cvarDefaultHideDistance("cs2f_hide_distance_default", FCVAR_NONE, "The default distance for hide", 250, true, 0, false, 0);
 CConVar<int> g_cvarMaxHideDistance("cs2f_hide_distance_max", FCVAR_NONE, "The max distance for hide", 2000, true, 0, false, 0);
 
@@ -625,7 +622,7 @@ CON_COMMAND_CHAT(spec, "[name] - Spectate another player or join spectators")
 
 	int iCommandPlayer = player ? player->GetPlayerSlot() : -1;
 	int iNumClients = 0;
-	int pSlot[MAXPLAYERS];
+	int pSlot[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlot, NO_MULTIPLE | NO_SELF | NO_DEAD | NO_SPECTATOR | NO_IMMUNITY))
 		return;
@@ -683,7 +680,7 @@ CON_COMMAND_CHAT(info, "<name> - Get a player's information")
 	}
 
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 	ETargetType nType;
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_BOT | NO_IMMUNITY, nType))
@@ -721,7 +718,7 @@ CON_COMMAND_CHAT(showteam, "<name> - Get a player's current team")
 	}
 
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_MULTIPLE | NO_IMMUNITY))
 		return;
@@ -748,6 +745,124 @@ CON_COMMAND_CHAT(showteam, "<name> - Get a player's current team")
 CON_COMMAND_F(cs2f_fullupdate, "- Force a full update for all clients.", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
 {
 	g_playerManager->FullUpdateAllClients();
+}
+
+void VoiceChatPrintPlayer(CCSPlayerController* player, int slot)
+{
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(slot);
+	ZEPlayer* pPlayer = g_playerManager->GetPlayer(slot);
+
+	bool bSteamIDAuthed = pPlayer->IsAuthenticated();
+	uint64 uSteamID = bSteamIDAuthed ? pPlayer->GetSteamId64() : pPlayer->GetUnauthenticatedSteamId64();
+	std::string strPlayerName = pController->GetPlayerName();
+	CPlayerUserId userId = g_pEngineServer2->GetPlayerUserId(slot);
+
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "\x04%s \x06[#%hu] \x05[%llu%s\x05]", strPlayerName.c_str(), userId, uSteamID, bSteamIDAuthed ? "" : " \x02(No Auth)");
+
+	if (player)
+		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "%s [#%hu] [%llu%s]", strPlayerName.c_str(), userId, uSteamID, bSteamIDAuthed ? "" : " (No Auth)");
+}
+
+void VoiceChatPrintCmd(const CCommand& args, CCSPlayerController* player)
+{
+	if (!GetGlobals()) return;
+
+	std::vector<int> vecActivePlayers;
+	std::vector<std::pair<int, float>> vecRecentPlayers;
+
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
+	{
+		ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
+
+		if (!pPlayer)
+			continue;
+
+		float flLastVoiceTime = pPlayer->GetLastVoiceTime();
+
+		if (flLastVoiceTime + 0.3f > GetGlobals()->curtime)
+		{
+			vecActivePlayers.push_back(i);
+		}
+		else if (flLastVoiceTime + 15.0f > GetGlobals()->curtime)
+		{
+			auto iter = std::lower_bound(vecRecentPlayers.begin(), vecRecentPlayers.end(), flLastVoiceTime, [](const std::pair<int, float>& recentPlayer, float flCompareVoiceTime) {
+				return recentPlayer.second < flCompareVoiceTime;
+			});
+
+			vecRecentPlayers.insert(iter, {i, flLastVoiceTime});
+		}
+	}
+
+	if (vecActivePlayers.empty() && vecRecentPlayers.empty())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "No players have recently used the voice chat.");
+		return;
+	}
+
+	if (!vecRecentPlayers.empty())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Players who recently used voice chat:");
+		if (player)
+			ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "Players who recently used voice chat:");
+
+		for (const auto& recentPlayer : vecRecentPlayers)
+			VoiceChatPrintPlayer(player, recentPlayer.first);
+	}
+
+	if (!vecActivePlayers.empty())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Players using voice chat:");
+		if (player)
+			ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "Players using voice chat:");
+
+		for (int slot : vecActivePlayers)
+			VoiceChatPrintPlayer(player, slot);
+	}
+}
+
+CON_COMMAND_CHAT(voicechat, "- Display players that are using voice chat")
+{
+	VoiceChatPrintCmd(args, player);
+}
+
+CON_COMMAND_CHAT(vc, "- Display players that are using voice chat")
+{
+	VoiceChatPrintCmd(args, player);
+}
+
+CConVar<bool> g_cvarThirdPersonEnable("cs2f_thirdperson_enable", FCVAR_NONE, "Whether to enable thirdperson", false);
+CConVar<float> g_cvarThirdPersonDistanceDefault("cs2f_thirdperson_distance_default", FCVAR_NONE, "Default distance for thirdperson", 65.0f, true, 1.0f, false, 0.0f);
+CConVar<float> g_cvarThirdPersonDistanceMin("cs2f_thirdperson_distance_min", FCVAR_NONE, "Minimum distance allowed for thirdperson", 15.0f, true, 1.0f, false, 0.0f);
+CConVar<float> g_cvarThirdPersonDistanceMax("cs2f_thirdperson_distance_max", FCVAR_NONE, "Maximum distance allowed for thirdperson", 150.0f, true, 1.0f, false, 0.0f);
+
+CON_COMMAND_CHAT(tp, "[distance] - Toggle thirdperson")
+{
+	if (!g_cvarThirdPersonEnable.Get() || !player)
+		return;
+
+	ZEPlayer* pPlayer = player->GetZEPlayer();
+	float distance = g_cvarThirdPersonDistanceDefault.Get();
+
+	if (!pPlayer)
+		return;
+
+	if (args.ArgC() >= 2)
+	{
+		distance = V_StringToFloat32(args[1], -1);
+
+		if (distance == -1)
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Invalid distance value \x06%s\x01.", args[1]);
+		else if (distance < g_cvarThirdPersonDistanceMin.Get())
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Minimum allowed thirdperson distance is \x06%g\x01.", g_cvarThirdPersonDistanceMin.Get());
+		else if (distance > g_cvarThirdPersonDistanceMax.Get())
+			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Maximum allowed thirdperson distance is \x06%g\x01.", g_cvarThirdPersonDistanceMax.Get());
+		else
+			pPlayer->ToggleThirdPerson(distance * -1);
+	}
+	else
+	{
+		pPlayer->ToggleThirdPerson(distance * -1, true);
+	}
 }
 
 #if _DEBUG
@@ -857,7 +972,7 @@ CON_COMMAND_CHAT(test_target, "<name> [blocked flag] [...] - Test string targett
 			iBlockedFlags |= NO_IMMUNITY;
 
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, iBlockedFlags))
 		return;
@@ -975,7 +1090,7 @@ CON_COMMAND_CHAT(setkills, "- Set your kills")
 CON_COMMAND_CHAT(setcollisiongroup, "<group> - Set a player's collision group")
 {
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_TARGET_BLOCKS))
 		return;
@@ -997,7 +1112,7 @@ CON_COMMAND_CHAT(setcollisiongroup, "<group> - Set a player's collision group")
 CON_COMMAND_CHAT(setsolidtype, "<solidtype> - Set a player's solid type")
 {
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_TARGET_BLOCKS))
 		return;
@@ -1019,7 +1134,7 @@ CON_COMMAND_CHAT(setsolidtype, "<solidtype> - Set a player's solid type")
 CON_COMMAND_CHAT(setinteraction, "<flags> - Set a player's interaction flags")
 {
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_TARGET_BLOCKS))
 		return;
@@ -1078,5 +1193,40 @@ CON_COMMAND_CHAT(discordbot, "<bot> <message> - Send a message to a discord webh
 	}
 
 	g_pDiscordBotManager->PostDiscordMessage(args[1], args[2]);
+}
+
+CON_COMMAND_CHAT(uitest, "<xml path> (<text>) - Spawn UI panel")
+{
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !uitest <xml path> (<text>)");
+		return;
+	}
+
+	static CHandle<CCSCustomHudLayout> hLayout = nullptr;
+
+	if (hLayout.Get())
+		hLayout->Remove();
+
+	hLayout = CCSCustomHudLayout::Create(args[1], "plugin_custom_hud");
+	hLayout->SetHasClass("dialog", "Dismissed", false, player);
+	hLayout->SetInputCaptureEnabled(true, player);
+
+	if (args.ArgC() > 2)
+		hLayout->SetDialogVariableString("MyLabel", "CustomText", args[2], player);
+
+	hLayout->SetDisconnectCallback([](CCSCustomHudLayout* pHud, int slot) {
+		Message("Custom disconnect callback called\n");
+	});
+
+	hLayout->SetClickCallback([](CCSPlayerController* pController, CCSCustomHudLayout* pHud, std::string sButtonId) {
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "%s clicked %s on %s\n", pController->GetPlayerName(), sButtonId.c_str(), pHud->GetName());
+
+		if (sButtonId == "dismiss_button")
+		{
+			pHud->SetHasClass("dialog", "Dismissed", true, pController);
+			pHud->SetInputCaptureEnabled(false, pController);
+		}
+	});
 }
 #endif // _DEBUG

@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,26 +20,16 @@
 #include "entitylistener.h"
 #include "common.h"
 #include "cs2_sdk/entity/cbaseentity.h"
+#include "cs2_sdk/entity/customhudlayout.h"
 #include "cs2fixes.h"
 #include "entities.h"
 #include "entity/cgamerules.h"
+#include "entityclass.h"
 #include "entwatch.h"
-#include "gameconfig.h"
-#include "plat.h"
 
 CEntityListener* g_pEntityListener = nullptr;
 
 CConVar<bool> g_cvarGrenadeNoBlock("cs2f_noblock_grenades", FCVAR_NONE, "Whether to use noblock on grenade projectiles", false);
-
-void Patch_GetHammerUniqueId(CEntityInstance* pEntity)
-{
-	static int offset = g_GameConfig->GetOffset("GetHammerUniqueId");
-	void** vtable = *(void***)pEntity;
-
-	// xor al, al -> mov al, 1
-	// so it always returns true and allows hammerid to be copied into the schema prop
-	Plat_WriteMemory(vtable[offset], (uint8_t*)"\xB0\x01", 2);
-}
 
 void CEntityListener::OnEntitySpawned(CEntityInstance* pEntity)
 {
@@ -59,15 +49,18 @@ void CEntityListener::OnEntitySpawned(CEntityInstance* pEntity)
 
 void CEntityListener::OnEntityCreated(CEntityInstance* pEntity)
 {
-	ExecuteOnce(Patch_GetHammerUniqueId(pEntity));
+	ExecuteOnce(addresses::UTIL_Remove = pEntity->m_pEntity->m_pClass->m_NameToThinkFunc("CBaseEntitySUB_Remove"));
 
 	if (!V_strcmp("cs_gamerules", pEntity->GetClassname()))
-		g_pGameRules = ((CCSGameRulesProxy*)pEntity)->m_pGameRules;
+		g_pGameRules = reinterpret_cast<CCSGameRulesProxy*>(pEntity)->m_pGameRules;
 }
 
 void CEntityListener::OnEntityDeleted(CEntityInstance* pEntity)
 {
 	EW_OnEntityDeleted(pEntity);
+
+	if (!V_strcmp("custom_hud_layout", pEntity->GetClassname()))
+		reinterpret_cast<CCSCustomHudLayout*>(pEntity)->OnEntityDeleted();
 }
 
 void CEntityListener::OnEntityParentChanged(CEntityInstance* pEntity, CEntityInstance* pNewParent)

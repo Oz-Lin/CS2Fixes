@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,53 +21,35 @@
 #include "commands.h"
 #include "cs2fixes.h"
 #include "ctimer.h"
-#include "customio.h"
 #include "detours.h"
-#include "engine/igameeventsystem.h"
 #include "entity/cbasebutton.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
-#include "entity/cgamerules.h"
 #include "entity/cmathcounter.h"
 #include "entity/cpointworldtext.h"
-#include "entity/cteam.h"
 #include "entity/services.h"
 #include "eventlistener.h"
-#include "gameevents.pb.h"
 #include "leader.h"
 #include "map_votes.h"
-#include "networksystem/inetworkmessages.h"
 #include "playermanager.h"
-#include "recipientfilters.h"
-#include "serversideclient.h"
-#include "tier0/vprof.h"
 #include "user_preferences.h"
-#include "usermessages.pb.h"
 #include "utils/entity.h"
 #include "vendor/nlohmann/json.hpp"
 #include "zombiereborn.h"
 #include <fstream>
-#include <sstream>
 
 #include "tier0/memdbgon.h"
 
 CEWHandler* g_pEWHandler = nullptr;
 
-SH_DECL_MANUALHOOK1_void(CBaseButton_Use, 0, 0, 0, InputData_t*);
-SH_DECL_MANUALHOOK1_void(CPhysBox_Use, 0, 0, 0, InputData_t*);
-SH_DECL_MANUALHOOK1_void(CRotButton_Use, 0, 0, 0, InputData_t*);
-SH_DECL_MANUALHOOK1_void(CMomentaryRotButton_Use, 0, 0, 0, InputData_t*);
-SH_DECL_MANUALHOOK1_void(CPhysicalButton_Use, 0, 0, 0, InputData_t*);
-
-SH_DECL_MANUALHOOK1_void(CTriggerTeleport_StartTouch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerTeleport_Touch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerTeleport_EndTouch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerOnce_StartTouch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerOnce_Touch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerOnce_EndTouch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerMultiple_StartTouch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerMultiple_Touch, 0, 0, 0, CBaseEntity*);
-SH_DECL_MANUALHOOK1_void(CTriggerMultiple_EndTouch, 0, 0, 0, CBaseEntity*);
+CBaseEntity* g_pCBaseButtonVTable = nullptr;
+CBaseEntity* g_pCPhysBoxVTable = nullptr;
+CBaseEntity* g_pCRotButtonVTable = nullptr;
+CBaseEntity* g_pCMomentaryRotButtonVTable = nullptr;
+CBaseEntity* g_pCPhysicalButtonVTable = nullptr;
+CBaseEntity* g_pCTriggerTeleportVTable = nullptr;
+CBaseEntity* g_pCTriggerOnceVTable = nullptr;
+CBaseEntity* g_pCTriggerMultipleVTable = nullptr;
 
 CConVar<bool> g_cvarEnableEntWatch("entwatch_enable", FCVAR_NONE, "INCOMPATIBLE WITH CS#. Whether to enable EntWatch features", false);
 CConVar<bool> g_cvarEnableFiltering("entwatch_auto_filter", FCVAR_NONE, "Whether to automatically block non-item holders from triggering uses", true);
@@ -233,7 +215,7 @@ void EWItemHandler::RegisterEntity(CBaseEntity* pEntity)
 	switch (type)
 	{
 		case Button:
-			g_pEWHandler->AddUseHook(pEntity);
+			g_pEWHandler->vecUseHookedEntities.push_back(pEntity->GetHandle());
 			break;
 		case CounterDown:
 		case CounterUp:
@@ -705,7 +687,7 @@ bool EWItemInstance::RemoveHandler(CBaseEntity* pEnt)
 		if (vecHandlers[i]->iEntIndex == pEnt->entindex())
 		{
 			if (vecHandlers[i]->type == EWHandlerType::Button)
-				g_pEWHandler->RemoveUseHook(pEnt);
+				g_pEWHandler->RemoveUseEntity(pEnt);
 			vecHandlers[i]->iEntIndex = -1;
 			return true;
 		}
@@ -735,7 +717,7 @@ void EWItemInstance::FindExistingHandlers()
 			continue;
 
 		CBaseEntity* pTarget = nullptr;
-		while ((pTarget = UTIL_FindEntityByName(pTarget, "*")))
+		while ((pTarget = UTIL_FindEntityByClassname(pTarget, "*")))
 		{
 			if (!V_strcmp(pTarget->m_sUniqueHammerID().Get(), handler->szHammerid.c_str()))
 			{
@@ -797,8 +779,9 @@ void EWItemInstance::Pickup(int slot)
 
 		if (bShouldSetClantag)
 		{
+			// Hud tick function sets it
 			bHasThisClantag = true;
-			pController->SetClanTag(sClantag);
+
 			if (g_cvarItemHolderScore.Get() > -1)
 			{
 				int score = pController->m_iScore + g_cvarItemHolderScore.Get();
@@ -836,9 +819,8 @@ void EWItemInstance::Drop(EWDropReason reason, CCSPlayerController* pController)
 		{
 			if (g_pEWHandler->vecItems[otherItem]->bShowHud && !g_pEWHandler->vecItems[otherItem]->bHasThisClantag)
 			{
-				// Player IS holding another item, score doesnt need adjusting
+				// Player IS holding another item
 
-				pController->SetClanTag(g_pEWHandler->vecItems[otherItem]->sClantag);
 				g_pEWHandler->vecItems[otherItem]->bHasThisClantag = true;
 				bSetAnotherClantag = true;
 				break;
@@ -847,16 +829,14 @@ void EWItemInstance::Drop(EWDropReason reason, CCSPlayerController* pController)
 		}
 		bHasThisClantag = false;
 
-		if (!bSetAnotherClantag)
+		if (g_cvarItemHolderScore.Get() != 0)
 		{
-			if (g_cvarItemHolderScore.Get() != 0)
-			{
-				int score = pController->m_iScore - g_cvarItemHolderScore.Get();
-				pController->m_iScore = score;
-			}
-
-			pController->SetClanTag("");
+			int score = pController->m_iScore - g_cvarItemHolderScore.Get();
+			pController->m_iScore = score;
 		}
+
+		if (!bSetAnotherClantag)
+			pController->ResetClanTag();
 	}
 
 	char sPlayerInfo[64];
@@ -871,7 +851,7 @@ void EWItemInstance::Drop(EWDropReason reason, CCSPlayerController* pController)
 
 			Message(EW_PREFIX "%s has dropped %s (weaponid:%d)\n", sPlayerInfo, szItemName.c_str(), iWeaponEnt);
 			if (bShowPickup)
-				ClientPrintAll(HUD_PRINTTALK, EW_PREFIX "\x03%s \x05has dropped %s%s", pController->GetPlayerName(), sChatColor, szItemName.c_str());
+				ClientPrintAll(HUD_PRINTTALK, EW_PREFIX "\x03%s\x05 has dropped %s%s", pController->GetPlayerName(), sChatColor, szItemName.c_str());
 			break;
 		case EWDropReason::Infected:
 			if (bAllowDrop)
@@ -1055,11 +1035,8 @@ bool EWItemInstance::IsEmpty()
 
 void CEWHandler::UnLoadConfig()
 {
-	if (!bConfigLoaded)
+	if (!m_bConfigLoaded)
 		return;
-
-	if (EW_IsFireOutputHooked())
-		mapIOFunctions.erase("entwatch");
 
 	// Clantags first so scores can be set back properly
 	ResetAllClantags();
@@ -1071,10 +1048,10 @@ void CEWHandler::UnLoadConfig()
 			vecItems[i]->vecHandlers[j]->RemoveHook();
 	vecItems.clear();
 
-	RemoveAllUseHooks();
-	RemoveAllTriggers();
+	vecUseHookedEntities.clear();
+	vecHookedTriggers.clear();
 
-	bConfigLoaded = false;
+	m_bConfigLoaded = false;
 }
 
 /*
@@ -1129,24 +1106,14 @@ void CEWHandler::LoadConfig(const char* sFilePath)
 		mapItemConfig[hash_32_fnv1a_const(sHammerid.c_str())] = item;
 	}
 
-	if (mapItemConfig.size() > 0)
-	{
-		// Hook FireOutput
-		if (!SetupFireOutputInternalDetour())
-			mapIOFunctions.erase("entwatch");
-		else if (!EW_IsFireOutputHooked())
-			mapIOFunctions["entwatch"] = EW_FireOutput;
-	}
-
-	bConfigLoaded = true;
+	m_bConfigLoaded = true;
 }
 
-void CEWHandler::PrintLoadedConfig(CPlayerSlot slot)
+void CEWHandler::PrintLoadedConfig(CCSPlayerController* pController)
 {
-	CCSPlayerController* player = CCSPlayerController::FromSlot(slot);
-	if (!bConfigLoaded)
+	if (!m_bConfigLoaded)
 	{
-		ClientPrint(player, HUD_PRINTTALK, EW_PREFIX "No config loaded.");
+		ClientPrint(pController, HUD_PRINTTALK, EW_PREFIX "No config loaded.");
 		return;
 	}
 
@@ -1156,59 +1123,60 @@ void CEWHandler::PrintLoadedConfig(CPlayerSlot slot)
 		i++;
 		if (!item)
 		{
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "Null item in the item map at pos %d", i);
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "Null item in the item map at pos %d", i);
 			continue;
 		}
 
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "------------ Item %02d ------------", i);
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "     Name:  %s", item->szItemName.c_str());
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "ShortName:  %s", item->szShortName.c_str());
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " Hammerid:  %s", item->szHammerid.c_str());
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "  Message:  %s", item->bShowPickup ? "True" : "False");
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "       UI:  %s", item->bShowHud ? "True" : "False");
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "------------ Item %02d ------------", i);
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "     Name:  %s", item->szItemName.c_str());
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "ShortName:  %s", item->szShortName.c_str());
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " Hammerid:  %s", item->szHammerid.c_str());
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "  Message:  %s", item->bShowPickup ? "True" : "False");
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "       UI:  %s", item->bShowHud ? "True" : "False");
 		if (item->transfer == EWCfg_Auto)
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  Auto");
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  Auto");
 		else if (item->transfer == EWCfg_Yes)
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  True");
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  True");
 		else
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  False");
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " Transfer:  False");
 
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " ");
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " ");
 		if (item->vecHandlers.size() == 0)
 		{
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "        No handlers set.");
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "        No handlers set.");
 		}
 		else
 		{
 			for (int j = 0; j < (item->vecHandlers).size(); j++)
 			{
 				// "          "
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "          --------- Handler %d ---------", j);
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "              Type:  %s", item->vecHandlers[j]->type == EWHandlerType::Button ? "Button" : "GameUi");
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "              Mode:  %d", (int)item->vecHandlers[j]->mode);
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "          Hammerid:  %s", item->vecHandlers[j]->szHammerid.c_str());
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "             Event:  %s", item->vecHandlers[j]->szOutput.c_str());
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "          Cooldown:  %.1f", item->vecHandlers[j]->flCooldown);
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "          Max Uses:  %d", item->vecHandlers[j]->iMaxUses);
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "           Message:  %s", item->vecHandlers[j]->bShowUse ? "True" : "False");
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "          --------- --------- ---------");
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "          --------- Handler %d ---------", j);
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "              Type:  %s", item->vecHandlers[j]->type == EWHandlerType::Button ? "Button" : "GameUi");
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "              Mode:  %d", (int)item->vecHandlers[j]->mode);
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "          Hammerid:  %s", item->vecHandlers[j]->szHammerid.c_str());
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "             Event:  %s", item->vecHandlers[j]->szOutput.c_str());
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "          Cooldown:  %.1f", item->vecHandlers[j]->flCooldown);
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "          Max Uses:  %d", item->vecHandlers[j]->iMaxUses);
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "           Message:  %s", item->vecHandlers[j]->bShowUse ? "True" : "False");
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "          --------- --------- ---------");
 			}
 		}
 
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " ");
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " ");
 		if (item->vecTriggers.size() == 0)
-			ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "       No triggers set.");
+			ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "       No triggers set.");
 		else
 			for (int j = 0; j < item->vecTriggers.size(); j++)
-				ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX " Trigger %d:  %s", j, item->vecTriggers[j].c_str());
+				ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX " Trigger %d:  %s", j, item->vecTriggers[j].c_str());
 
-		ClientPrint(player, HUD_PRINTCONSOLE, EW_PREFIX "------------ ------- ------------");
+		ClientPrint(pController, HUD_PRINTCONSOLE, EW_PREFIX "------------ ------- ------------");
 	}
-	ClientPrint(player, HUD_PRINTTALK, EW_PREFIX "See console for output.");
+	ClientPrint(pController, HUD_PRINTTALK, EW_PREFIX "See console for output.");
 }
 
 void CEWHandler::ClearItems()
 {
+	vecActiveTransfers.clear();
 	mapTransfers.clear();
 	vecItems.clear();
 }
@@ -1322,7 +1290,7 @@ bool CEWHandler::RegisterTrigger(CBaseEntity* pEnt)
 			if (strcmp(sHammerid, pItem->vecTriggers[j].c_str()))
 				continue;
 
-			AddTouchHook(pEnt);
+			vecHookedTriggers.push_back(pEnt->GetHandle());
 
 			return true;
 		}
@@ -1330,74 +1298,116 @@ bool CEWHandler::RegisterTrigger(CBaseEntity* pEnt)
 	return false;
 }
 
-void CEWHandler::AddTouchHook(CBaseEntity* pEnt)
+void CEWHandler::CreateHooks()
 {
-	static int startOffset = g_GameConfig->GetOffset("CBaseEntity::StartTouch");
-	static int touchOffset = g_GameConfig->GetOffset("CBaseEntity::Touch");
-	static int endOffset = g_GameConfig->GetOffset("CBaseEntity::EndTouch");
+	g_pCBaseButtonVTable = (CBaseEntity*)modules::server->FindVirtualTable("CBaseButton");
+	g_pCPhysBoxVTable = (CBaseEntity*)modules::server->FindVirtualTable("CPhysBox");
+	g_pCRotButtonVTable = (CBaseEntity*)modules::server->FindVirtualTable("CRotButton");
+	g_pCMomentaryRotButtonVTable = (CBaseEntity*)modules::server->FindVirtualTable("CMomentaryRotButton");
+	g_pCPhysicalButtonVTable = (CBaseEntity*)modules::server->FindVirtualTable("CPhysicalButton");
+	g_pCTriggerTeleportVTable = (CBaseEntity*)modules::server->FindVirtualTable("CTriggerTeleport");
+	g_pCTriggerOnceVTable = (CBaseEntity*)modules::server->FindVirtualTable("CTriggerOnce");
+	g_pCTriggerMultipleVTable = (CBaseEntity*)modules::server->FindVirtualTable("CTriggerMultiple");
 
-	if (!V_strcmp(pEnt->GetClassname(), "trigger_teleport"))
+	int offset = g_GameConfig->GetOffset("CBaseEntity::Use");
+
+	if (offset == -1)
 	{
-		if (iTriggerTeleportTouchHooks[0] == -1)
-		{
-			const auto pTeleport_VTable = modules::server->FindVirtualTable("CTriggerTeleport");
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerTeleport_StartTouch, startOffset, 0, 0);
-			iTriggerTeleportTouchHooks[0] = SH_ADD_MANUALDVPHOOK(CTriggerTeleport_StartTouch, pTeleport_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerTeleport_Touch, touchOffset, 0, 0);
-			iTriggerTeleportTouchHooks[1] = SH_ADD_MANUALDVPHOOK(CTriggerTeleport_Touch, pTeleport_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerTeleport_EndTouch, endOffset, 0, 0);
-			iTriggerTeleportTouchHooks[2] = SH_ADD_MANUALDVPHOOK(CTriggerTeleport_EndTouch, pTeleport_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "trigger_multiple"))
-	{
-		if (iTriggerMultipleTouchHooks[0] == -1)
-		{
-			const auto pMultiple_VTable = modules::server->FindVirtualTable("CTriggerMultiple");
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerMultiple_StartTouch, startOffset, 0, 0);
-			iTriggerMultipleTouchHooks[0] = SH_ADD_MANUALDVPHOOK(CTriggerMultiple_StartTouch, pMultiple_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerMultiple_Touch, touchOffset, 0, 0);
-			iTriggerMultipleTouchHooks[1] = SH_ADD_MANUALDVPHOOK(CTriggerMultiple_Touch, pMultiple_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerMultiple_EndTouch, endOffset, 0, 0);
-			iTriggerMultipleTouchHooks[2] = SH_ADD_MANUALDVPHOOK(CTriggerMultiple_EndTouch, pMultiple_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "trigger_once"))
-	{
-		if (iTriggerOnceTouchHooks[0] == -1)
-		{
-			const auto pOnce_VTable = modules::server->FindVirtualTable("CTriggerOnce");
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerOnce_StartTouch, startOffset, 0, 0);
-			iTriggerOnceTouchHooks[0] = SH_ADD_MANUALDVPHOOK(CTriggerOnce_StartTouch, pOnce_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerOnce_Touch, touchOffset, 0, 0);
-			iTriggerOnceTouchHooks[1] = SH_ADD_MANUALDVPHOOK(CTriggerOnce_Touch, pOnce_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-
-			SH_MANUALHOOK_RECONFIGURE(CTriggerOnce_EndTouch, endOffset, 0, 0);
-			iTriggerOnceTouchHooks[2] = SH_ADD_MANUALDVPHOOK(CTriggerOnce_EndTouch, pOnce_VTable, SH_MEMBER(this, &CEWHandler::Hook_Touch), false);
-		}
+		Panic("Failed to find CBaseEntity::Use offset\n");
+		return;
 	}
 
-	vecHookedTriggers.push_back(pEnt->GetHandle());
+	m_hBaseButtonUse.Configure(offset);
+	m_hBaseButtonUse.AddGlobal((CBaseEntity*)&g_pCBaseButtonVTable);
+
+	m_hPhysBoxUse.Configure(offset);
+	m_hPhysBoxUse.AddGlobal((CBaseEntity*)&g_pCPhysBoxVTable);
+
+	m_hRotButtonUse.Configure(offset);
+	m_hRotButtonUse.AddGlobal((CBaseEntity*)&g_pCRotButtonVTable);
+
+	m_hMomentaryRotButtonUse.Configure(offset);
+	m_hMomentaryRotButtonUse.AddGlobal((CBaseEntity*)&g_pCMomentaryRotButtonVTable);
+
+	m_hPhysicalButtonUse.Configure(offset);
+	m_hPhysicalButtonUse.AddGlobal((CBaseEntity*)&g_pCPhysicalButtonVTable);
+
+	offset = g_GameConfig->GetOffset("CBaseEntity::StartTouch");
+
+	if (offset == -1)
+	{
+		Panic("Failed to find CBaseEntity::StartTouch offset\n");
+		return;
+	}
+
+	m_hTriggerTeleportStartTouch.Configure(offset);
+	m_hTriggerTeleportStartTouch.AddGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+
+	m_hTriggerOnceStartTouch.Configure(offset);
+	m_hTriggerOnceStartTouch.AddGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+
+	m_hTriggerMultipleStartTouch.Configure(offset);
+	m_hTriggerMultipleStartTouch.AddGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
+
+	offset = g_GameConfig->GetOffset("CBaseEntity::Touch");
+
+	if (offset == -1)
+	{
+		Panic("Failed to find CBaseEntity::Touch offset\n");
+		return;
+	}
+
+	m_hTriggerTeleportTouch.Configure(offset);
+	m_hTriggerTeleportTouch.AddGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+
+	m_hTriggerOnceTouch.Configure(offset);
+	m_hTriggerOnceTouch.AddGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+
+	m_hTriggerMultipleTouch.Configure(offset);
+	m_hTriggerMultipleTouch.AddGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
+
+	offset = g_GameConfig->GetOffset("CBaseEntity::EndTouch");
+
+	if (offset == -1)
+	{
+		Panic("Failed to find CBaseEntity::EndTouch offset\n");
+		return;
+	}
+
+	m_hTriggerTeleportEndTouch.Configure(offset);
+	m_hTriggerTeleportEndTouch.AddGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+
+	m_hTriggerOnceEndTouch.Configure(offset);
+	m_hTriggerOnceEndTouch.AddGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+
+	m_hTriggerMultipleEndTouch.Configure(offset);
+	m_hTriggerMultipleEndTouch.AddGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
 }
 
-void CEWHandler::Hook_Touch(CBaseEntity* pOther)
+void CEWHandler::RemoveHooks()
 {
-	CBaseEntity* pEntity = META_IFACEPTR(CBaseEntity);
-	if (!pEntity)
-		RETURN_META(MRES_IGNORED);
+	m_hBaseButtonUse.RemoveGlobal((CBaseEntity*)&g_pCBaseButtonVTable);
+	m_hPhysBoxUse.RemoveGlobal((CBaseEntity*)&g_pCPhysBoxVTable);
+	m_hRotButtonUse.RemoveGlobal((CBaseEntity*)&g_pCRotButtonVTable);
+	m_hMomentaryRotButtonUse.RemoveGlobal((CBaseEntity*)&g_pCMomentaryRotButtonVTable);
+	m_hPhysicalButtonUse.RemoveGlobal((CBaseEntity*)&g_pCPhysicalButtonVTable);
+	m_hTriggerTeleportStartTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+	m_hTriggerOnceStartTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+	m_hTriggerMultipleStartTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
+	m_hTriggerTeleportTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+	m_hTriggerOnceTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+	m_hTriggerMultipleTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
+	m_hTriggerTeleportEndTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerTeleportVTable);
+	m_hTriggerOnceEndTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerOnceVTable);
+	m_hTriggerMultipleEndTouch.RemoveGlobal((CBaseEntity*)&g_pCTriggerMultipleVTable);
+}
 
+KHook::Return<void> CEWHandler::Hook_Touch(CBaseEntity* pThis, CBaseEntity* pOther)
+{
 	bool bFound = false;
 	for (int i = 0; i < (vecHookedTriggers).size(); i++)
 	{
-		if (vecHookedTriggers[i] == pEntity->GetHandle())
+		if (vecHookedTriggers[i] == pThis->GetHandle())
 		{
 			bFound = true;
 			break;
@@ -1405,24 +1415,24 @@ void CEWHandler::Hook_Touch(CBaseEntity* pOther)
 	}
 
 	if (!bFound)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
 	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pOther;
 	if (!pPawn)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
 	CCSPlayerController* pController = pPawn->GetOriginalController();
 	if (!pController)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
 	ZEPlayer* zpPlayer = pController->GetZEPlayer();
 	if (!zpPlayer)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
 	if (zpPlayer->IsEbanned())
-		RETURN_META(MRES_SUPERCEDE);
+		return {KHook::Action::Supersede};
 
-	RETURN_META(MRES_IGNORED);
+	return {KHook::Action::Ignore};
 }
 
 bool CEWHandler::RemoveTrigger(CBaseEntity* pEnt)
@@ -1437,23 +1447,6 @@ bool CEWHandler::RemoveTrigger(CBaseEntity* pEnt)
 		}
 	}
 	return false;
-}
-
-void CEWHandler::RemoveAllTriggers()
-{
-	Message("[EntWatch] Fully unhooking touch hooks\n");
-	for (int i = 0; i < 3; i++)
-	{
-		SH_REMOVE_HOOK_ID(iTriggerTeleportTouchHooks[i]);
-		iTriggerTeleportTouchHooks[i] = -1;
-
-		SH_REMOVE_HOOK_ID(iTriggerMultipleTouchHooks[i]);
-		iTriggerMultipleTouchHooks[i] = -1;
-
-		SH_REMOVE_HOOK_ID(iTriggerOnceTouchHooks[i]);
-		iTriggerOnceTouchHooks[i] = -1;
-	}
-	vecHookedTriggers.clear();
 }
 
 void CEWHandler::RemoveHandler(CBaseEntity* pEnt)
@@ -1486,21 +1479,14 @@ void CEWHandler::ResetAllClantags()
 	if (!GetGlobals())
 		return;
 
-	// Reset everyone's scores and tags for insurance
+	// Reset everyone's tags
 	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
 		if (!pController)
 			continue;
 
-		// Bring score down below entwatch_score so new item holders show above
-		if (pController->m_iScore >= g_cvarItemHolderScore.Get())
-		{
-			int score = pController->m_iScore % g_cvarItemHolderScore.Get();
-			pController->m_iScore = score;
-		}
-
-		pController->SetClanTag("");
+		pController->ResetClanTag();
 	}
 }
 
@@ -1518,8 +1504,6 @@ int CEWHandler::RegisterItem(CBasePlayerWeapon* pWeapon)
 	Message("Registering item %s \n", item->szItemName.c_str(), vecItems.size() + 1);
 
 	std::shared_ptr<EWItemInstance> instance = std::make_shared<EWItemInstance>(pWeapon->entindex(), item);
-
-	V_snprintf(instance->sClantag, sizeof(EWItemInstance::sClantag), "[+]%s:", instance->szShortName.c_str());
 
 	bool bKnife = pWeapon->GetWeaponVData()->m_GearSlot() == GEAR_SLOT_KNIFE;
 	instance->bAllowDrop = !bKnife;
@@ -1612,13 +1596,10 @@ void CEWHandler::PlayerPickup(CCSPlayerPawn* pPawn, int iItemInstance)
 
 	item->Pickup(pPawn->m_hOriginalController->GetPlayerSlot());
 
-	if (g_cvarEnableEntwatchHud.Get() && !m_bHudTicking)
-	{
-		m_bHudTicking = true;
-		CTimer::Create(EW_HUD_TICKRATE, TIMERFLAG_MAP | TIMERFLAG_ROUND, [] {
+	if (m_pHudTimer.expired())
+		m_pHudTimer = CTimer::Create(EW_HUD_TICKRATE, TIMERFLAG_MAP | TIMERFLAG_ROUND, [] {
 			return EW_UpdateHud();
 		});
-	}
 }
 
 void CEWHandler::PlayerDrop(EWDropReason reason, int iItemInstance, CCSPlayerController* pController)
@@ -1704,9 +1685,9 @@ void CEWHandler::Transfer(CCSPlayerController* pCaller, int iItemInstance, CHand
 		}
 
 		CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pOwnerPawn->m_pWeaponServices()->m_hMyWeapons();
-		FOR_EACH_VEC(*weapons, i)
+		for (const auto& hWeapon : *weapons)
 		{
-			CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
+			CBasePlayerWeapon* pWeapon = hWeapon.Get();
 
 			if (!pWeapon)
 				continue;
@@ -1721,9 +1702,9 @@ void CEWHandler::Transfer(CCSPlayerController* pCaller, int iItemInstance, CHand
 
 	// Make receiver drop the weapon in the item slot
 	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pReceiverPawn->m_pWeaponServices()->m_hMyWeapons();
-	FOR_EACH_VEC(*weapons, i)
+	for (const auto& hWeapon : *weapons)
 	{
-		CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
+		CBasePlayerWeapon* pWeapon = hWeapon.Get();
 
 		if (!pWeapon)
 			continue;
@@ -1735,11 +1716,36 @@ void CEWHandler::Transfer(CCSPlayerController* pCaller, int iItemInstance, CHand
 		}
 	}
 
+	// Add this weapon and receiver to active transfers to prevent others from picking it up
+	if (GetGlobals())
+	{
+		std::shared_ptr<EActiveTransfer> transfer = std::make_shared<EActiveTransfer>();
+		transfer->hReceiver = hReceiver;
+		transfer->hWeapon = pItemWeapon->GetHandle();
+		transfer->flTime = GetGlobals()->curtime + 0.95;
+		vecActiveTransfers.push_back(transfer);
+		CTimer::Create(1.0, TIMERFLAG_MAP | TIMERFLAG_ROUND, [] {
+			if (!GetGlobals())
+				return -1.0f;
+
+			for (int i = 0; i < g_pEWHandler->vecActiveTransfers.size(); i++)
+			{
+				std::shared_ptr<EActiveTransfer> transfer = g_pEWHandler->vecActiveTransfers[i];
+				if (transfer->flTime < GetGlobals()->curtime)
+				{
+					g_pEWHandler->vecActiveTransfers.erase(g_pEWHandler->vecActiveTransfers.begin() + i);
+					i--;
+				}
+			}
+			return -1.0f;
+		});
+	}
+
 	// Give the item to the receiver
 	Vector vecOrigin = pReceiverPawn->GetAbsOrigin();
 	pItemWeapon->Teleport(&vecOrigin, nullptr, nullptr);
 
-	const char* pszCommandPlayerName = pCaller ? pCaller->GetPlayerName() : "Console";
+	std::string strCommandPlayerName = pCaller ? pCaller->GetPlayerName() : "Console";
 
 	ZEPlayer* pZEReceiver = g_playerManager->GetPlayer(pReceiver->GetPlayerSlot());
 	char sReceiverInfo[64];
@@ -1758,13 +1764,13 @@ void CEWHandler::Transfer(CCSPlayerController* pCaller, int iItemInstance, CHand
 			V_snprintf(sOwnerInfo, sizeof(sOwnerInfo), "%s [%llu]", pOwner->GetPlayerName(), pZEOwner->GetUnauthenticatedSteamId64());
 
 		Message("[EntWatch] %s transferred %s from %s to %s\n",
-				pszCommandPlayerName,
+				strCommandPlayerName.c_str(),
 				g_pEWHandler->vecItems[iItemInstance]->szItemName.c_str(),
 				sOwnerInfo,
 				sReceiverInfo);
 
 		ClientPrintAll(HUD_PRINTTALK, EW_PREFIX "Admin\x02 %s\x01 has transferred%s %s\x01 from\x02 %s\x01 to\x02 %s\x01.",
-					   pszCommandPlayerName,
+					   strCommandPlayerName.c_str(),
 					   g_pEWHandler->vecItems[iItemInstance]->sChatColor,
 					   g_pEWHandler->vecItems[iItemInstance]->szItemName.c_str(),
 					   pOwner->GetPlayerName(),
@@ -1773,77 +1779,19 @@ void CEWHandler::Transfer(CCSPlayerController* pCaller, int iItemInstance, CHand
 	else
 	{
 		Message("[EntWatch] %s transferred %s to %s\n",
-				pszCommandPlayerName,
+				strCommandPlayerName.c_str(),
 				g_pEWHandler->vecItems[iItemInstance]->szItemName.c_str(),
 				sReceiverInfo);
 
 		ClientPrintAll(HUD_PRINTTALK, EW_PREFIX "Admin\x02 %s\x01 has transferred%s %s\x01 to\x02 %s\x01.",
-					   pszCommandPlayerName,
+					   strCommandPlayerName.c_str(),
 					   g_pEWHandler->vecItems[iItemInstance]->sChatColor,
 					   g_pEWHandler->vecItems[iItemInstance]->szItemName.c_str(),
 					   pReceiver->GetPlayerName());
 	}
 }
 
-void CEWHandler::AddUseHook(CBaseEntity* pEnt)
-{
-	static int offset = g_GameConfig->GetOffset("CBaseEntity::Use");
-	if (offset == -1)
-	{
-		Panic("Failed to find CBaseEntity::Use offset in entwatch.cpp::AddUseHook() !!\n");
-		return;
-	}
-
-	if (!V_strcmp(pEnt->GetClassname(), "func_button"))
-	{
-		if (iBaseBtnUseHookId == -1)
-		{
-			const auto pBaseButton_VTable = modules::server->FindVirtualTable("CBaseButton");
-			SH_MANUALHOOK_RECONFIGURE(CBaseButton_Use, offset, 0, 0);
-			iBaseBtnUseHookId = SH_ADD_MANUALDVPHOOK(CBaseButton_Use, pBaseButton_VTable, SH_MEMBER(this, &CEWHandler::Hook_Use), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "func_physbox"))
-	{
-		if (iPhysboxUseHookId == -1)
-		{
-			const auto pPhysbox_VTable = modules::server->FindVirtualTable("CPhysBox");
-			SH_MANUALHOOK_RECONFIGURE(CPhysBox_Use, offset, 0, 0);
-			iPhysboxUseHookId = SH_ADD_MANUALDVPHOOK(CPhysBox_Use, pPhysbox_VTable, SH_MEMBER(this, &CEWHandler::Hook_Use), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "func_rot_button"))
-	{
-		if (iRotBtnUseHookId == -1)
-		{
-			const auto pCRotButton_VTable = modules::server->FindVirtualTable("CRotButton");
-			SH_MANUALHOOK_RECONFIGURE(CRotButton_Use, offset, 0, 0);
-			iRotBtnUseHookId = SH_ADD_MANUALDVPHOOK(CRotButton_Use, pCRotButton_VTable, SH_MEMBER(this, &CEWHandler::Hook_Use), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "momentary_rot_button"))
-	{
-		if (iMomRotBtnUseHookId == -1)
-		{
-			const auto pCMomentaryRotButton_VTable = modules::server->FindVirtualTable("CMomentaryRotButton");
-			SH_MANUALHOOK_RECONFIGURE(CMomentaryRotButton_Use, offset, 0, 0);
-			iMomRotBtnUseHookId = SH_ADD_MANUALDVPHOOK(CMomentaryRotButton_Use, pCMomentaryRotButton_VTable, SH_MEMBER(this, &CEWHandler::Hook_Use), false);
-		}
-	}
-	else if (!V_strcmp(pEnt->GetClassname(), "func_physical_button"))
-	{
-		if (iPhysicalBtnUseHookId == -1)
-		{
-			const auto pCPhysicalButton_VTable = modules::server->FindVirtualTable("CPhysicalButton");
-			SH_MANUALHOOK_RECONFIGURE(CPhysicalButton_Use, offset, 0, 0);
-			iPhysicalBtnUseHookId = SH_ADD_MANUALDVPHOOK(CPhysicalButton_Use, pCPhysicalButton_VTable, SH_MEMBER(this, &CEWHandler::Hook_Use), false);
-		}
-	}
-
-	vecUseHookedEntities.push_back(pEnt->GetHandle());
-}
-
-void CEWHandler::RemoveUseHook(CBaseEntity* pEnt)
+void CEWHandler::RemoveUseEntity(CBaseEntity* pEnt)
 {
 	for (int i = 0; i < (vecUseHookedEntities).size(); i++)
 	{
@@ -1855,39 +1803,13 @@ void CEWHandler::RemoveUseHook(CBaseEntity* pEnt)
 	}
 }
 
-void CEWHandler::RemoveAllUseHooks()
-{
-	Message("[EntWatch] Fully unhooking use hooks\n");
-
-	SH_REMOVE_HOOK_ID(iBaseBtnUseHookId);
-	iBaseBtnUseHookId = -1;
-
-	SH_REMOVE_HOOK_ID(iPhysboxUseHookId);
-	iPhysboxUseHookId = -1;
-
-	SH_REMOVE_HOOK_ID(iRotBtnUseHookId);
-	iRotBtnUseHookId = -1;
-
-	SH_REMOVE_HOOK_ID(iMomRotBtnUseHookId);
-	iMomRotBtnUseHookId = -1;
-
-	SH_REMOVE_HOOK_ID(iPhysicalBtnUseHookId);
-	iPhysicalBtnUseHookId = -1;
-
-	vecUseHookedEntities.clear();
-}
-
-void CEWHandler::Hook_Use(InputData_t* pInput)
+KHook::Return<void> CEWHandler::Hook_Use(CBaseEntity* pThis, InputData_t* pInput)
 {
 	// Message("#####    USE HOOK    #####\n");
-	CBaseEntity* pEntity = META_IFACEPTR(CBaseEntity);
-	if (!pEntity)
-		RETURN_META(MRES_IGNORED);
-
 	bool bFound = false;
 	for (int i = 0; i < (vecUseHookedEntities).size(); i++)
 	{
-		if (vecUseHookedEntities[i] == pEntity->GetHandle())
+		if (vecUseHookedEntities[i] == pThis->GetHandle())
 		{
 			bFound = true;
 			break;
@@ -1895,9 +1817,9 @@ void CEWHandler::Hook_Use(InputData_t* pInput)
 	}
 
 	if (!bFound)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
-	int index = pEntity->entindex();
+	int index = pThis->entindex();
 	int itemIndex = -1;
 	int handlerIndex = -1;
 	for (int i = 0; i < (vecItems).size(); i++)
@@ -1912,31 +1834,31 @@ void CEWHandler::Hook_Use(InputData_t* pInput)
 	}
 
 	if (itemIndex == -1 || handlerIndex == -1)
-		RETURN_META(MRES_IGNORED);
+		return {KHook::Action::Ignore};
 
 	// Prevent uses from non item owners if we are filtering
-	META_RES resVal = MRES_IGNORED;
+	KHook::Return<void> returnVal = {KHook::Action::Ignore};
 	if (g_cvarEnableFiltering.Get())
-		resVal = MRES_SUPERCEDE;
+		returnVal = {KHook::Action::Supersede};
 
 	CBaseEntity* pActivator = pInput->pActivator;
 
 	if (!pActivator || !pActivator->IsPawn())
-		RETURN_META(resVal);
+		return returnVal;
 
 	std::shared_ptr<EWItemInstance> pItem = vecItems[itemIndex];
 	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pActivator;
 	CCSPlayerController* pController = pPawn->GetOriginalController();
 
 	if (!pController || pController->GetPlayerSlot() != pItem->iOwnerSlot)
-		RETURN_META(resVal);
+		return returnVal;
 
 	//
 	// WE SHOW USE MESSAGE IN FireOutput
 	// This is just to prevent unnecessary stuff with buttons like movement
 	//
 
-	RETURN_META(MRES_IGNORED);
+	return {KHook::Action::Ignore};
 }
 
 // Update cd and uses of all held items
@@ -1968,8 +1890,17 @@ float EW_UpdateHud()
 
 		std::string sItemText = pItem->GetHandlerStateText();
 
-		// TODO: std::format not supported in clang16 by default
-		// sHudText.append(std::format("\n[{}]{}: {}", sItemText, pItem->szShortName, pOwner->GetPlayerName()));
+		if (g_cvarUseEntwatchClantag.Get())
+		{
+			V_snprintf(pItem->sClantag, sizeof(EWItemInstance::sClantag), "%s: %s", sItemText.c_str(), pItem->szShortName.c_str());
+			if (pItem->bHasThisClantag)
+				pOwner->SetClanTag(pItem->sClantag);
+		}
+
+		if (!g_cvarEnableEntwatchHud.Get())
+			continue;
+
+		// std::format not supported in clang16 by default (steamrt3)
 		if (!bFirst)
 		{
 			sHudText.append("\n");
@@ -2045,12 +1976,11 @@ void EW_RoundPreStart()
 
 	g_pEWHandler->ResetAllClantags();
 	g_pEWHandler->ClearItems();
-	g_pEWHandler->m_bHudTicking = false;
 }
 
 void EW_OnEntitySpawned(CEntityInstance* pEntity)
 {
-	if (!g_pEWHandler || !g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler || !g_pEWHandler->m_bConfigLoaded)
 		return;
 
 	CBaseEntity* pEnt = (CBaseEntity*)pEntity;
@@ -2096,7 +2026,7 @@ void EW_OnEntitySpawned(CEntityInstance* pEntity)
 
 void EW_OnEntityDeleted(CEntityInstance* pEntity)
 {
-	if (!g_pEWHandler || !g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler || !g_pEWHandler->m_bConfigLoaded)
 		return;
 
 	CBaseEntity* pEnt = (CBaseEntity*)pEntity;
@@ -2131,7 +2061,7 @@ void EW_OnWeaponDeleted(CBaseEntity* pEntity)
 bool EW_Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pPlayerWeapon)
 {
 	// false=block it, true=dont block it
-	if (!g_pEWHandler || !g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler || !g_pEWHandler->m_bConfigLoaded)
 		return true;
 
 	CCSPlayerPawn* pPawn = pWeaponServices->GetPawn();
@@ -2149,12 +2079,33 @@ bool EW_Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices* pWeapon
 	if (!zpPlayer || zpPlayer->IsEbanned())
 		return false;
 
+	// Limit any active transfers to the receiver only
+	if (g_pEWHandler->vecActiveTransfers.size() == 0)
+		return true;
+
+	for (int i = 0; i < g_pEWHandler->vecActiveTransfers.size(); i++)
+	{
+		std::shared_ptr<EActiveTransfer> transfer = g_pEWHandler->vecActiveTransfers[i];
+		CHandle<CCSPlayerController> hReceiver = transfer->hReceiver;
+		CHandle<CBasePlayerWeapon> hWeapon = transfer->hWeapon;
+		if (!hReceiver.Get() || !hWeapon.Get())
+			continue;
+
+		if (hWeapon.Get() != pPlayerWeapon)
+			continue;
+
+		if (hReceiver.Get() == ccsPlayer)
+			return true;
+		else
+			return false;
+	}
+
 	return true;
 }
 
 void EW_Detour_CCSPlayer_WeaponServices_EquipWeapon(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pWeapon)
 {
-	if (!g_pEWHandler || !g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler || !g_pEWHandler->m_bConfigLoaded)
 		return;
 
 	CCSPlayerPawn* pPawn = pWeaponServices->GetPawn();
@@ -2174,7 +2125,7 @@ void EW_Detour_CCSPlayer_WeaponServices_EquipWeapon(CCSPlayer_WeaponServices* pW
 
 void EW_DropWeapon(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pWeapon)
 {
-	if (!g_pEWHandler || !g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler || !g_pEWHandler->m_bConfigLoaded)
 		return;
 
 	CCSPlayerPawn* pPawn = pWeaponServices->GetPawn();
@@ -2241,6 +2192,14 @@ void EW_PlayerDeathPre(CCSPlayerController* pController)
 
 void EW_PlayerDisconnect(int slot)
 {
+	ZEPlayer* pPlayer = g_playerManager->GetPlayer(CPlayerSlot(slot));
+	if (pPlayer)
+	{
+		CPointWorldText* pText = pPlayer->GetEntwatchHud();
+		if (pText)
+			pText->Remove();
+	}
+
 	auto i = g_pEWHandler->mapTransfers.find(slot);
 	if (i != g_pEWHandler->mapTransfers.end())
 		g_pEWHandler->mapTransfers.erase(slot);
@@ -2253,14 +2212,9 @@ void EW_PlayerDisconnect(int slot)
 	g_pEWHandler->PlayerDrop(EWDropReason::Disconnect, -1, pController);
 }
 
-bool EW_IsFireOutputHooked()
+void EW_FireOutput(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, float flDelay)
 {
-	return std::any_of(mapIOFunctions.begin(), mapIOFunctions.end(), [](const auto& p) { return p.first == "entwatch"; });
-}
-
-void EW_FireOutput(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, const CVariant* value, float flDelay)
-{
-	if (!EW_IsFireOutputHooked() || !pCaller)
+	if (!g_pEWHandler->IsConfigLoaded() || !pCaller)
 		return;
 
 	for (int i = 0; i < (g_pEWHandler->vecItems).size(); i++)
@@ -2283,7 +2237,7 @@ void EW_FireOutput(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CE
 
 			// Message("Output for item %s (instance:%d)  handler:%d outputname:%s\n", g_pEWHandler->vecItems[i]->szItemName, i, j, pThis->m_pDesc->m_pName);
 			if (handler->type == EWHandlerType::CounterDown || handler->type == EWHandlerType::CounterUp)
-				handler->Use(value->m_float32);
+				handler->Use(((CMathCounter*)pCaller)->GetCounterValue());
 			else
 				handler->Use(0.0);
 		}
@@ -2335,7 +2289,7 @@ CON_COMMAND_CHAT_FLAGS(ew_reload, "- Reloads the current map's entwatch config",
 	// LoadConfig unloads the current config already
 	g_pEWHandler->LoadMapConfig(GetGlobals()->mapname.ToCStr());
 
-	if (!g_pEWHandler->bConfigLoaded)
+	if (!g_pEWHandler->m_bConfigLoaded)
 	{
 		ClientPrint(player, HUD_PRINTTALK, EW_PREFIX "Error reloading config, check console log for details.");
 		return;
@@ -2355,7 +2309,7 @@ CON_COMMAND_CHAT_FLAGS(etransfer, "<owner/$itemname> <receiver> - Transfer an En
 		return;
 	}
 
-	const char* pszCommandPlayerName = player ? player->GetPlayerName() : "Console";
+	std::string strCommandPlayerName = player ? player->GetPlayerName() : "Console";
 
 	bool bHasOngoing = false;
 	auto ongoingTransfer = g_pEWHandler->mapTransfers.find(player->GetPlayerSlot());
@@ -2400,7 +2354,7 @@ CON_COMMAND_CHAT_FLAGS(etransfer, "<owner/$itemname> <receiver> - Transfer an En
 	}
 
 	int iNumClients = 0;
-	int pSlots[MAXPLAYERS];
+	int pSlots[MAX_PLAYERS];
 
 	// Find receiver
 	if (!g_playerManager->CanTargetPlayers(player, args[2], iNumClients, pSlots, NO_MULTIPLE | NO_SPECTATOR | NO_DEAD))
@@ -2598,7 +2552,7 @@ CON_COMMAND_CHAT(ew_dump, "- Prints the currently loaded config to console")
 		return;
 	}
 
-	g_pEWHandler->PrintLoadedConfig(player->GetPlayerSlot());
+	g_pEWHandler->PrintLoadedConfig(player);
 }
 
 CON_COMMAND_CHAT(hud, "- Toggle EntWatch HUD")

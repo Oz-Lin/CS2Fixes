@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -17,11 +17,11 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "KeyValues.h"
 #include "common.h"
 #include "entity/ccsplayercontroller.h"
 #include "steam/isteamugc.h"
 #include "steam/steam_api_common.h"
+#include "tier0/utlstringlist.h"
 #undef snprintf
 #include "vendor/nlohmann/json_fwd.hpp"
 #include <deque>
@@ -50,8 +50,8 @@ public:
 	void SetTimeCooldown(time_t timeCooldown) { m_timeCooldown = timeCooldown; };
 	float GetPendingCooldown() { return m_fPendingCooldown; };
 	void SetPendingCooldown(float fPendingCooldown) { m_fPendingCooldown = fPendingCooldown; };
-	bool IsOnCooldown() { return GetCurrentCooldown() > 0.0f; }
 	bool IsPending() { return m_fPendingCooldown > 0.0f && m_fPendingCooldown == GetCurrentCooldown(); };
+	bool IsOnCooldown();
 	float GetCurrentCooldown();
 
 private:
@@ -131,11 +131,10 @@ private:
 	float m_fCooldown;
 };
 
-// Implementation is a bit hardcoded for HandlePlayerMapLookup use
-class CWorkshopDetailsQuery : public std::enable_shared_from_this<CWorkshopDetailsQuery>
+class CMapSystemWorkshopDetailsQuery : public std::enable_shared_from_this<CMapSystemWorkshopDetailsQuery>
 {
 public:
-	CWorkshopDetailsQuery(UGCQueryHandle_t hQuery, uint64 iWorkshopId, CCSPlayerController* pController, QueryCallback_t callbackSuccess) :
+	CMapSystemWorkshopDetailsQuery(UGCQueryHandle_t hQuery, uint64 iWorkshopId, CCSPlayerController* pController, QueryCallback_t callbackSuccess) :
 		m_hQuery(hQuery), m_iWorkshopId(iWorkshopId), m_callbackSuccess(callbackSuccess)
 	{
 		if (pController)
@@ -149,13 +148,14 @@ public:
 		}
 	}
 
-	static std::shared_ptr<CWorkshopDetailsQuery> Create(uint64 iWorkshopId, CCSPlayerController* pController, QueryCallback_t callbackSuccess);
+	static std::shared_ptr<CMapSystemWorkshopDetailsQuery> Create(uint64 iWorkshopId, CCSPlayerController* pController = nullptr, QueryCallback_t callbackSuccess = nullptr);
+	static void ReportCreateFailure(uint64 iWorkshopId, CCSPlayerController* pController, QueryCallback_t callbackSuccess);
 
 private:
 	void OnQueryCompleted(SteamUGCQueryCompleted_t* pCompletedQuery, bool bFailed);
 
 	UGCQueryHandle_t m_hQuery;
-	CCallResult<CWorkshopDetailsQuery, SteamUGCQueryCompleted_t> m_CallResult;
+	CCallResult<CMapSystemWorkshopDetailsQuery, SteamUGCQueryCompleted_t> m_CallResult;
 	uint64 m_iWorkshopId;
 	bool m_bConsole;
 	CHandle<CCSPlayerController> m_hController;
@@ -168,7 +168,7 @@ public:
 	CMapVoteSystem()
 	{
 		// Initialize the nomination / vote arrays to -1
-		for (int i = 0; i < MAXPLAYERS; i++)
+		for (int i = 0; i < MAX_PLAYERS; i++)
 		{
 			m_arrPlayerNominations[i] = -1;
 			m_arrPlayerVotes[i] = -1;
@@ -200,26 +200,26 @@ public:
 	bool IsVoteOngoing() { return m_bIsVoteOngoing; }
 	bool IsIntermissionAllowed(bool bCheckOnly = true);
 	bool IsMapListLoaded() { return m_bMapListLoaded; }
-	CUtlStringList CreateWorkshopMapGroup();
+	void CreateWorkshopMapGroup(CUtlStringList& mapList);
 	void QueueMapDownload(PublishedFileId_t iWorkshopId);
+	void StartMapDownload(float flDelay = 0.0f);
 	void PrintDownloadProgress();
 	std::shared_ptr<CMap> GetCurrentMap() { return m_pCurrentMap; }
 	void SetCurrentMap(std::shared_ptr<CMap> pCurrentMap) { m_pCurrentMap = pCurrentMap; }
 	int GetDownloadQueueSize() { return m_DownloadQueue.size(); }
-	void ClearInvalidNominations();
+	void OnPlayerCountChange();
 	std::shared_ptr<CMap> GetForcedNextMap() { return m_pForcedNextMap; }
 	void SetForcedNextMap(std::shared_ptr<CMap> pForcedNextMap) { m_pForcedNextMap = pForcedNextMap; }
 	std::unordered_map<int, int> GetNominatedMaps();
-	void ApplyGameSettings(KeyValues* pKV);
+	void ApplyGameSettings(const char* pszMapName, uint64 iWorkshopId);
 	void OnLevelShutdown();
 	std::vector<std::shared_ptr<CCooldown>> GetMapCooldowns() { return m_vecCooldowns; }
 	std::string ConvertFloatToString(float fValue, int precision);
 	void SetDisabledCooldowns(bool bValue) { g_bDisableCooldowns = bValue; } // Can be used by custom fork features, e.g. an auto-restart
 	void ProcessGroupCooldowns();
 	bool ReloadMapList(bool bReloadMap = true);
-	bool ConvertCooldownsKVToJSON();
-	void AddWorkshopDetailsQuery(std::shared_ptr<CWorkshopDetailsQuery> pQuery) { m_vecWorkshopDetailsQueries.push_back(pQuery); }
-	void RemoveWorkshopDetailsQuery(std::shared_ptr<CWorkshopDetailsQuery> pQuery) { m_vecWorkshopDetailsQueries.erase(std::remove(m_vecWorkshopDetailsQueries.begin(), m_vecWorkshopDetailsQueries.end(), pQuery), m_vecWorkshopDetailsQueries.end()); }
+	void AddWorkshopDetailsQuery(std::shared_ptr<CMapSystemWorkshopDetailsQuery> pQuery) { m_vecWorkshopDetailsQueries.push_back(pQuery); }
+	void RemoveWorkshopDetailsQuery(std::shared_ptr<CMapSystemWorkshopDetailsQuery> pQuery) { m_vecWorkshopDetailsQueries.erase(std::remove(m_vecWorkshopDetailsQueries.begin(), m_vecWorkshopDetailsQueries.end(), pQuery), m_vecWorkshopDetailsQueries.end()); }
 	void SetPlayerNomination(int iPlayerSlot, int iMapIndex) { m_arrPlayerNominations[iPlayerSlot] = iMapIndex; }
 
 private:
@@ -234,10 +234,10 @@ private:
 	std::vector<std::shared_ptr<CMap>> m_vecMapList;
 	std::vector<std::shared_ptr<CGroup>> m_vecGroups;
 	std::vector<std::shared_ptr<CCooldown>> m_vecCooldowns;
-	int m_arrPlayerNominations[MAXPLAYERS];
+	int m_arrPlayerNominations[MAX_PLAYERS];
 	std::shared_ptr<CMap> m_pForcedNextMap;
 	int m_iRandomWinnerShift = 0;
-	int m_arrPlayerVotes[MAXPLAYERS];
+	int m_arrPlayerVotes[MAX_PLAYERS];
 	bool m_bIsVoteOngoing = false;
 	bool m_bMapListLoaded = false;
 	bool m_bIntermissionStarted = false;
@@ -246,8 +246,9 @@ private:
 	bool g_bDisableCooldowns = false;
 	std::filesystem::file_time_type m_timeMapListModified = std::filesystem::file_time_type::min();
 	std::weak_ptr<CTimer> m_pDownloadProgressTimer;
-	std::weak_ptr<CTimer> m_pRateLimitedDownloadTimer;
-	std::vector<std::shared_ptr<CWorkshopDetailsQuery>> m_vecWorkshopDetailsQueries;
+	std::weak_ptr<CTimer> m_pDownloadTimer;
+	std::vector<std::shared_ptr<CMapSystemWorkshopDetailsQuery>> m_vecWorkshopDetailsQueries;
+	int m_iSessionMaxPlayerCount = 0;
 };
 
 extern CMapVoteSystem* g_pMapVoteSystem;

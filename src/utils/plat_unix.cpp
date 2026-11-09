@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  *
  * DynLibUtils
  * Copyright (C) 2023 komashchenko (Phoenix)
@@ -25,16 +25,17 @@
 	#include "module.h"
 	#include "plat.h"
 	#include "sys/mman.h"
+	#include <ctype.h>
 	#include <dlfcn.h>
 	#include <elf.h>
 	#include <fcntl.h>
-	#include <libgen.h>
 	#include <link.h>
-	#include <locale>
 	#include <stdio.h>
+	#include <stdlib.h>
 	#include <string.h>
 	#include <sys/stat.h>
 	#include <sys/types.h>
+	#include <unistd.h>
 
 	#include "tier0/memdbgon.h"
 

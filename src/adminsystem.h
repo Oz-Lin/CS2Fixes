@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,7 +20,6 @@
 #pragma once
 #include "platform.h"
 #include "playermanager.h"
-#include "utlvector.h"
 #include <ctime>
 
 // clang-format off
@@ -56,8 +55,8 @@
 #define ADMIN_PREFIX "Admin %s has "
 #define CONSOLE_NAME "\2CONSOLE\1" // color it to indicate that it isnt a regular player using the command
 
-void PrintSingleAdminAction(const char* pszAdminName, const char* pszTargetName, const char* pszAction, const char* pszAction2, const char* prefix);
-void PrintMultiAdminAction(ETargetType nType, const char* pszAdminName, const char* pszAction, const char* pszAction2, const char* prefix);
+void PrintSingleAdminAction(std::string strAdminName, std::string strTargetName, const char* pszAction, const char* pszAction2, const char* prefix);
+void PrintMultiAdminAction(ETargetType nType, std::string strAdminName, const char* pszAction, const char* pszAction2, const char* prefix);
 
 enum GrammarTense
 {
@@ -78,6 +77,7 @@ public:
 		else
 			m_iTimestamp = duration;
 	}
+	virtual ~CInfractionBase() = default;
 	enum EInfractionType
 	{
 		Ban,
@@ -179,7 +179,7 @@ public:
 	bool LoadAdmins();
 	void AddOrUpdateAdmin(uint64 iSteamID, uint64 iFlags = 0, int iAdminImmunity = 0);
 	bool LoadInfractions();
-	void AddInfraction(CInfractionBase*);
+	void AddInfraction(std::shared_ptr<CInfractionBase> pInfraction);
 	void SaveInfractions();
 	bool ApplyInfractions(ZEPlayer* player);
 	bool FindAndRemoveInfraction(ZEPlayer* player, CInfractionBase::EInfractionType type);
@@ -190,13 +190,10 @@ public:
 	void AddDisconnectedPlayer(const char* pszName, uint64 xuid, const char* pszIP);
 	void ShowDisconnectedPlayers(CCSPlayerController* const pAdmin);
 
-	// TODO: Remove this once servers have been given a few months to update cs2fixes
-	bool ConvertAdminsKVToJSON();
-
 private:
 	std::map<std::string, CAdminBase> m_mapAdminGroups;
 	std::map<uint64, CAdmin> m_mapAdmins;
-	CUtlVector<CInfractionBase*> m_vecInfractions;
+	std::vector<std::shared_ptr<CInfractionBase>> m_vecInfractions;
 
 	// Implemented as a circular buffer.
 	std::tuple<std::string, uint64, std::string> m_rgDCPly[20];

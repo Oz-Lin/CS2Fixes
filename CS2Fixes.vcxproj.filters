@@ -68,6 +68,9 @@
     <ClCompile Include="src\detours.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\virtual_hooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\playermanager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -83,7 +86,7 @@
     <ClCompile Include="src\gameconfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sdk\tier1\convar.cpp">
+    <ClCompile Include="sdk\tier0_perproject\convar.cpp">
       <Filter>Source Files\sdk</Filter>
     </ClCompile>
     <ClCompile Include="src\httpmanager.cpp">
@@ -122,7 +125,7 @@
     <ClCompile Include="src\leader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sdk\tier1\keyvalues3.cpp">
+    <ClCompile Include="sdk\tier0_perproject\keyvalues3.cpp">
       <Filter>Source Files\sdk</Filter>
     </ClCompile>
     <ClCompile Include="sdk\entity2\entitykeyvalues.cpp">
@@ -179,6 +182,12 @@
     <ClCompile Include="src\entwatch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\cvarwhitelist.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\cfgparser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\utils\weapon.cpp">
       <Filter>Source Files\utils</Filter>
     </ClCompile>
@@ -188,16 +197,19 @@
     <ClCompile Include="src\utils\utils.cpp">
       <Filter>Source Files\utils</Filter>
     </ClCompile>
+    <ClCompile Include="src\utils\vscript_function.cpp">
+      <Filter>Source Files\utils</Filter>
+    </ClCompile>
     <ClCompile Include="src\cs2_sdk\entity\services.cpp">
       <Filter>Source Files\cs2_sdk\entity</Filter>
     </ClCompile>
-    <ClCompile Include="src\cs2_sdk\entity\ccsplayerpawn.cpp">
-      <Filter>Source Files\cs2_sdk\entity</Filter>
-    </ClCompile>
-    <ClCompile Include="src\cs2_sdk\entity\cbasemodelentity.cpp">
+    <ClCompile Include="src\cs2_sdk\entity\customhudlayout.cpp">
       <Filter>Source Files\cs2_sdk\entity</Filter>
     </ClCompile>
     <ClCompile Include="src\topdefender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mapmigrations.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -218,6 +230,9 @@
       <Filter>Header Files\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\utils\virtual.h">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\vscript_function.h">
       <Filter>Header Files\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\cs2_sdk\schema.h">
@@ -247,6 +262,9 @@
     <ClInclude Include="src\cs2_sdk\entity\cbasemodelentity.h">
       <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
+    <ClInclude Include="src\cs2_sdk\entity\cbeam.h">
+      <Filter>Header Files\cs2_sdk\entity</Filter>
+    </ClInclude>
     <ClInclude Include="src\cs2fixes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -256,13 +274,13 @@
     <ClInclude Include="src\commands.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\cdetour.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\ctimer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\detours.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\virtual_hooks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\playermanager.h">
@@ -358,12 +376,6 @@
     <ClInclude Include="src\patches.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\cs2_sdk\serversideclient.h">
-      <Filter>Header Files\cs2_sdk</Filter>
-    </ClInclude>
-    <ClInclude Include="src\cs2_sdk\clientframe.h">
-      <Filter>Header Files\cs2_sdk</Filter>
-    </ClInclude>
     <ClInclude Include="src\entities.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -388,10 +400,16 @@
     <ClInclude Include="src\cs2_sdk\entity\ctriggerteleport.h">
       <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
-    <ClInclude Include="src\cs2_sdk\netmessages.h">
+    <ClInclude Include="src\cs2_sdk\map.h">
       <Filter>Header Files\cs2_sdk</Filter>
     </ClInclude>
     <ClInclude Include="src\entwatch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cvarwhitelist.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cfgparser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\cs2_sdk\entity\cpointworldtext.h">
@@ -421,11 +439,23 @@
     <ClInclude Include="src\utils\utils.h">
       <Filter>Header Files\utils</Filter>
     </ClInclude>
+    <ClInclude Include="src\utils\khook_helpers.h">
+      <Filter>Header Files\utils</Filter>
+    </ClInclude>
     <ClInclude Include="src\cs2_sdk\entity\cpointorient.h">
       <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
     <ClInclude Include="src\topdefender.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mapmigrations.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cs2_sdk\entity\customhudlayout.h">
+      <Filter>Header Files\cs2_sdk\entity</Filter>
+    </ClInclude>
+    <ClInclude Include="src\cs2_sdk\entity\customplayercamera.h">
+      <Filter>Header Files\cs2_sdk\entity</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

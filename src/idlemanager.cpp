@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,6 +20,7 @@
 #include "idlemanager.h"
 #include "commands.h"
 #include "cs2fixes.h"
+#include "engine2/ivengineserver2.h"
 #include <vprof.h>
 
 CIdleSystem* g_pIdleSystem = nullptr;
@@ -78,6 +79,8 @@ void CIdleSystem::CheckForIdleClients()
 	}
 }
 
+const uint64 ACTIVE_BUTTONS = IN_ATTACK + IN_JUMP + IN_DUCK + IN_FORWARD + IN_BACK + IN_MOVELEFT + IN_MOVERIGHT;
+
 // Logged inputs and time for the logged inputs are updated every time this function is run.
 void CIdleSystem::UpdateIdleTimes()
 {
@@ -106,7 +109,9 @@ void CIdleSystem::UpdateIdleTimes()
 		if (pMovement)
 		{
 			const auto buttonStates = pMovement->m_nButtons().m_pButtonStates();
-			iCurrentMovement = buttonStates[0];
+
+			// Only count certain inputs for resetting idle state
+			iCurrentMovement = buttonStates[0] & ACTIVE_BUTTONS;
 		}
 		const auto buttonsChanged = pPlayer->GetLastInputs() ^ iCurrentMovement;
 

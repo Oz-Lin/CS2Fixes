@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -40,6 +40,7 @@ protected:
 	void SetLastExecute(float flLastExecute) { m_flLastExecute = flLastExecute; }
 
 public:
+	virtual ~CTimerBase() = default;
 	virtual bool Execute(bool bAutomaticExecute = false) = 0;
 	virtual void Cancel() = 0;
 

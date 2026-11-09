@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -17,12 +17,11 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "KeyValues.h"
 #include "commands.h"
 #include "common.h"
 #include "ctimer.h"
+#include "engine2/ivengineserver2.h"
 #include "entities.h"
-#include "entity/cbaseplayercontroller.h"
 #include "entity/cgamerules.h"
 #include "entwatch.h"
 #include "eventlistener.h"
@@ -30,15 +29,15 @@
 #include "idlemanager.h"
 #include "leader.h"
 #include "map_votes.h"
+#include "mapmigrations.h"
 #include "panoramavote.h"
-#include "recipientfilters.h"
 #include "topdefender.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
 
 #include "tier0/memdbgon.h"
 
-CUtlVector<CGameEventListener*> g_vecEventListeners;
+std::vector<CGameEventListener*> g_vecEventListeners;
 
 void RegisterEventListeners()
 {
@@ -47,10 +46,8 @@ void RegisterEventListeners()
 	if (bRegistered || !g_gameEventManager)
 		return;
 
-	FOR_EACH_VEC(g_vecEventListeners, i)
-	{
-		g_gameEventManager->AddListener(g_vecEventListeners[i], g_vecEventListeners[i]->GetEventName(), true);
-	}
+	for (CGameEventListener* pListener : g_vecEventListeners)
+		g_gameEventManager->AddListener(pListener, pListener->GetEventName(), true);
 
 	bRegistered = true;
 }
@@ -60,12 +57,10 @@ void UnregisterEventListeners()
 	if (!g_gameEventManager)
 		return;
 
-	FOR_EACH_VEC(g_vecEventListeners, i)
-	{
-		g_gameEventManager->RemoveListener(g_vecEventListeners[i]);
-	}
+	for (CGameEventListener* pListener : g_vecEventListeners)
+		g_gameEventManager->RemoveListener(pListener);
 
-	g_vecEventListeners.Purge();
+	g_vecEventListeners.clear();
 }
 
 GAME_EVENT_F(round_prestart)
@@ -85,6 +80,8 @@ GAME_EVENT_F(round_prestart)
 
 	if (g_cvarEnableEntWatch.Get())
 		EW_RoundPreStart();
+
+	g_pMapMigrations->OnRoundPrestart();
 }
 
 CConVar<bool> g_cvarBlockTeamMessages("cs2f_block_team_messages", FCVAR_NONE, "Whether to block team join messages", false);

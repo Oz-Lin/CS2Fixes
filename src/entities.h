@@ -1,7 +1,7 @@
 ﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include "entity2/variant.h"
+#include <cstddef>
+
 class InputData_t;
 class CGamePlayerEquip;
 class CBaseEntity;
@@ -26,20 +29,21 @@ class CGameUI;
 class CPointViewControl;
 class CCSPlayerPawn;
 class CEntityKeyValues;
+class CTriggerGravity;
 
 namespace CTriggerGravityHandler
 {
-	void OnPrecache(CBaseEntity* pEntity, const CEntityKeyValues* kv);
-	bool GravityTouching(CBaseEntity* pEntity, CBaseEntity* pOther);
-	void OnEndTouch(CBaseEntity* pEntity, CBaseEntity* pOther);
+	void OnPrecache(CTriggerGravity* pEntity, const CEntityKeyValues* kv);
+	bool GravityTouching(CTriggerGravity* pEntity, CBaseEntity* pOther);
+	void OnEndTouch(CTriggerGravity* pEntity, CBaseEntity* pOther);
 } // namespace CTriggerGravityHandler
 
 namespace CGamePlayerEquipHandler
 {
 	void Use(CGamePlayerEquip* pEntity, InputData_t* pInput);
-	void TriggerForAllPlayers(CGamePlayerEquip* pEntity, InputData_t* pInput);
-	bool TriggerForActivatedPlayer(CGamePlayerEquip* pEntity, InputData_t* pInput);
-	void OnPrecache(CGamePlayerEquip* pEntity, const CEntityKeyValues* kv);
+	void TriggerForAllPlayers(CGamePlayerEquip* pEntity);
+	bool TriggerForActivatedPlayer(CGamePlayerEquip* pEntity, CBaseEntity* pActivator, variant_t* value);
+	bool OnPrecache(CGamePlayerEquip* pEntity, const CEntityKeyValues* kv, CEntityKeyValues* pFilteredKV);
 } // namespace CGamePlayerEquipHandler
 
 namespace CGameUIHandler

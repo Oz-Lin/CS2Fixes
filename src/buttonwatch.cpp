@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -22,31 +22,14 @@
 #include "commands.h"
 #include "cs2fixes.h"
 #include "ctimer.h"
-#include "detours.h"
-#include "entity.h"
-#include "entity/cbaseplayercontroller.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
-#include "entity/cgameplayerequip.h"
-#include "entity/cgamerules.h"
-#include "entity/clogiccase.h"
-#include "entity/cpointviewcontrol.h"
 
-CConVar<bool> g_cvarEnableButtonWatch(
-	"cs2f_enable_button_watch", FCVAR_NONE, "INCOMPATIBLE WITH CS#. Whether to enable button watch or not.", false,
-	[](CConVar<bool>* cvar, CSplitScreenSlot slot, const bool* new_val, const bool* old_val) {
-		if (!(*new_val) || !SetupFireOutputInternalDetour())
-		{
-			mapIOFunctions.erase("buttonwatch");
-			cvar->Set(false);
-		}
-		else if (!IsButtonWatchEnabled())
-			mapIOFunctions["buttonwatch"] = ButtonWatch;
-	});
+CConVar<bool> g_cvarEnableButtonWatch("cs2f_enable_button_watch", FCVAR_NONE, "Whether to enable button watch or not.", false);
 
 CON_COMMAND_CHAT_FLAGS(bw, "- Toggle button watch display", ADMFLAG_GENERIC)
 {
-	if (!IsButtonWatchEnabled())
+	if (!g_cvarEnableButtonWatch.Get())
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Button watch is disabled on this server.");
 		return;
@@ -84,21 +67,18 @@ CON_COMMAND_CHAT_FLAGS(bw, "- Toggle button watch display", ADMFLAG_GENERIC)
 	}
 }
 
-bool IsButtonWatchEnabled()
-{
-	return std::any_of(mapIOFunctions.begin(), mapIOFunctions.end(), [](const auto& p) {
-		return p.first == "buttonwatch";
-	});
-}
-
 std::map<int, bool> mapRecentEnts;
-void ButtonWatch(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, const CVariant* value, float flDelay)
+void ButtonWatch(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, float flDelay)
 {
-	if (!IsButtonWatchEnabled() || !GetGlobals() || V_stricmp(pThis->m_pDesc->m_pName, "OnPressed") || !pActivator || !((CBaseEntity*)pActivator)->IsPawn() || !pCaller || mapRecentEnts.contains(pCaller->GetEntityIndex().Get()))
+	if (!GetGlobals() || V_stricmp(pThis->m_pDesc->m_pName, "OnPressed") || !pActivator || !((CBaseEntity*)pActivator)->IsPawn() || !pCaller || mapRecentEnts.contains(pCaller->GetEntityIndex().Get()))
 		return;
 
 	CCSPlayerController* ccsPlayer = CCSPlayerController::FromPawn(static_cast<CCSPlayerPawn*>(pActivator));
 	std::string strPlayerName = ccsPlayer->GetPlayerName();
+	const char* pszButtonName = ((CBaseEntity*)pCaller)->GetName();
+
+	if (!V_strcasecmp("game_playerdie", pszButtonName) || !V_strcasecmp("game_playerkill", pszButtonName) || !V_strcasecmp("game_playerjoin", pszButtonName) || !V_strcasecmp("game_playerspawn", pszButtonName) || !V_strcasecmp("game_playerleave", pszButtonName))
+		return;
 
 	ZEPlayer* zpPlayer = ccsPlayer->GetZEPlayer();
 	std::string strPlayerID = "";
@@ -108,7 +88,7 @@ void ButtonWatch(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEnt
 		strPlayerID = "(" + strPlayerID + ")";
 	}
 
-	std::string strButton = std::to_string(pCaller->GetEntityIndex().Get()) + " " + std::string(((CBaseEntity*)pCaller)->GetName());
+	std::string strButton = std::to_string(pCaller->GetEntityIndex().Get()) + " " + std::string(pszButtonName);
 
 	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{

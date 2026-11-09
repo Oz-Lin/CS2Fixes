@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,7 +21,7 @@
 #include "../cs2fixes.h"
 #include "../ctimer.h"
 #include "../recipientfilters.h"
-#include "engine/igameeventsystem.h"
+#include "engine2/igameeventsystem.h"
 #include "entity/cgamerules.h"
 #include "gameevents.pb.h"
 #include "networksystem/inetworkmessages.h"

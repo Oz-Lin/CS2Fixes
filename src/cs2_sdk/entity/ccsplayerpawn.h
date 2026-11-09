@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -62,11 +62,10 @@ public:
 	SCHEMA_FIELD(float, m_flVelocityModifier)
 	SCHEMA_FIELD(CCSPlayer_ActionTrackingServices*, m_pActionTrackingServices)
 	SCHEMA_FIELD(QAngle, m_angEyeAngles)
+	SCHEMA_FIELD(bool, m_bLeftHanded)
 
 	[[nodiscard]] CCSPlayer_CameraServices* GetCameraService()
 	{
 		return reinterpret_cast<CCSPlayer_CameraServices*>(m_pCameraServices());
 	}
-
-	void FixPlayerModelAnimations();
 };

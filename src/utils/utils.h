@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,7 +20,8 @@
 #pragma once
 
 #include "playerslot.h"
-#include "utlvector.h"
+#include "steam/isteamugc.h"
+#include "tier0/utlvector.h"
 #include <string>
 
 class CServerSideClient;
@@ -33,3 +34,6 @@ CServerSideClient* GetClientBySlot(CPlayerSlot slot);
 
 uint32 GetSoundEventHash(const char* pszSoundEventName);
 std::string StringToLower(std::string strValue);
+
+ISteamUGC* GetSteamUGC();
+ISteamHTTP* GetSteamHTTP();

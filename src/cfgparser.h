@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -17,13 +17,21 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "cbasemodelentity.h"
-#include "ccsplayerpawn.h"
+#pragma once
 
-void CBaseModelEntity::SetModel(const char* szModel)
+#include "tier0/convar.h"
+#include <map>
+
+class CCfgParser
 {
-	addresses::CBaseModelEntity_SetModel(this, szModel);
+public:
+	void PreLevelLoad(const char* pszMapName);
+	void ApplyGameSettings(const char* pszMapName);
+	void ExecuteConfigs(const char* pszMapName);
+	void ParseCfg(const char* pszCfgPath);
 
-	if (IsPawn())
-		((CCSPlayerPawn*)this)->FixPlayerModelAnimations();
-}
+private:
+	std::map<uint16, ConVarRefAbstract> m_mapConVars;
+};
+
+extern CCfgParser* g_pCfgParser;

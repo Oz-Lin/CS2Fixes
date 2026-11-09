@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -22,7 +22,9 @@
 #include "commands.h"
 #include "ctime"
 #include "ctimer.h"
-#include "engine/igameeventsystem.h"
+#include "engine2/igameeventsystem.h"
+#include "engine2/ivengineserver2.h"
+#include "engine2/serversideclient.h"
 #include "entity/ccsplayercontroller.h"
 #include "entwatch.h"
 #include "leader.h"
@@ -30,12 +32,12 @@
 #include "networksystem/inetworkmessages.h"
 #include "panoramavote.h"
 #include "recipientfilters.h"
-#include "serversideclient.h"
+#include "tier0/utlstring.h"
 #include "tier0/vprof.h"
 #include "user_preferences.h"
 #include "utils/entity.h"
-#include "utlstring.h"
 #include "votemanager.h"
+#include "zombiereborn.h"
 #include <../cs2fixes.h>
 
 #include "tier0/memdbgon.h"
@@ -122,6 +124,24 @@ void ZEPlayer::OnAuthenticated()
 	g_pUserPreferencesSystem->PullPreferences(GetPlayerSlot().Get());
 
 	SetSteamIdAttribute();
+
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+
+	if (!g_cvarEnableMapSteamIds.Get() || !pController)
+		return;
+
+	IGameEvent* pEvent = g_gameEventManager->CreateEvent("player_connect");
+
+	if (!pEvent)
+		return;
+
+	pEvent->SetString("name", pController->GetPlayerName());
+	pEvent->SetPlayer("userid", GetPlayerSlot());
+	pEvent->SetBool("bot", false);
+	// Needs a custom name, because CS2 strips keys like xuid/networkid etc from logic_eventlistener output, and can't use uint64 because JS can't parse it..
+	pEvent->SetString("steam_id", std::to_string(GetSteamId64()).c_str());
+
+	g_gameEventManager->FireEvent(pEvent, true);
 }
 
 void ZEPlayer::CheckInfractions()
@@ -163,13 +183,15 @@ void ZEPlayer::SetHideDistance(int distance)
 	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), HIDE_DISTANCE_PREF_KEY_NAME, distance);
 }
 
+CConVar<int> g_cvarFlashLightEnable("cs2f_flashlight_enable", FCVAR_NONE, "Whether to enable flashlights (0=disabled, 1=light_barn flashlight, limited vertical movement, 2=particle flashlight, no cvar customization)", false);
 CConVar<bool> g_cvarFlashLightShadows("cs2f_flashlight_shadows", FCVAR_NONE, "Whether to enable flashlight shadows", true);
 CConVar<bool> g_cvarFlashLightTransmitOthers("cs2f_flashlight_transmit_others", FCVAR_NONE, "Whether to transmit other player's flashlights, recommended to have shadows off for this", false);
 CConVar<float> g_cvarFlashLightBrightness("cs2f_flashlight_brightness", FCVAR_NONE, "How bright should flashlights be", 1.0f);
 CConVar<float> g_cvarFlashLightDistance("cs2f_flashlight_distance", FCVAR_NONE, "How far flashlights should be from the player's head", 54.0f); // The minimum distance such that an awp wouldn't block the light
 CConVar<float> g_cvarFlashLightAngle("cs2f_flashlight_angle", FCVAR_NONE, "How wide should the flashlight be in degrees", 45.0f);
 CConVar<Color> g_cvarFlashLightColor("cs2f_flashlight_color", FCVAR_NONE, "What color to use for flashlights", Color(255, 255, 255));
-CConVar<CUtlString> g_cvarFlashLightAttachment("cs2f_flashlight_attachment", FCVAR_NONE, "Which attachment to parent a flashlight to. If the player model is not properly setup, you might have to use clip_limit here instead", "axis_of_intent");
+CConVar<CUtlString> g_cvarFlashLightAttachment("cs2f_flashlight_attachment", FCVAR_NONE, "Which attachment to parent a flashlight to", "clip_limit");
+CConVar<CUtlString> g_cvarFlashLightParticle("cs2f_flashlight_particle", FCVAR_NONE, "Path to flashlight particle", "particles/cs2fixes/simple_flashlight.vpcf");
 
 void TeleportFlashLight(CCSPlayerPawn* pPawn, CBaseEntity* pLight, float flDistance = -1.f, QAngle angOverride = vec3_angle)
 {
@@ -239,6 +261,14 @@ void ZEPlayer::ToggleFlashLight()
 	CSingleRecipientFilter filter(GetPlayerSlot());
 	pController->EmitSoundFilter(filter, "HudChat.Message");
 
+	// particle flashlight
+	if (g_cvarFlashLightEnable.Get() == 2)
+	{
+		pController->DispatchParticle(g_cvarFlashLightParticle.Get().String(), &filter);
+		return;
+	}
+
+	// light_barn flashlight
 	if (!GetFlashLight())
 		SpawnFlashLight();
 
@@ -286,6 +316,7 @@ bool ZEPlayer::IsFlooding()
 void PrecacheBeaconParticle(IEntityResourceManifest* pResourceManifest)
 {
 	pResourceManifest->AddResource(g_cvarBeaconParticle.Get().String());
+	pResourceManifest->AddResource(g_cvarFlashLightParticle.Get().String());
 }
 
 void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
@@ -333,7 +364,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 
 		if (pPlayer->m_iTeamNum < CS_TEAM_T || !pPlayer->m_hPlayerPawn->IsAlive() || pPlayer->m_iTeamNum != iTeamNum)
 		{
-			addresses::UTIL_Remove(pParticle);
+			pParticle->Remove();
 			return -1.0f;
 		}
 
@@ -359,7 +390,7 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 		// Remove beacon granted by leader if his leader was stripped
 		if (!pBeaconGiver->IsLeader())
 		{
-			addresses::UTIL_Remove(pParticle);
+			pParticle->Remove();
 			return -1.0f;
 		}
 
@@ -374,7 +405,7 @@ void ZEPlayer::EndBeacon()
 	CParticleSystem* pParticle = m_hBeaconParticle.Get();
 
 	if (pParticle)
-		addresses::UTIL_Remove(pParticle);
+		pParticle->Remove();
 }
 
 // Kills off currently active mark (if exists) and makes a new one.
@@ -409,36 +440,30 @@ void ZEPlayer::CreateMark(float fDuration, Vector vecOrigin)
 
 int ZEPlayer::GetLeaderVoteCount()
 {
-	int iValidVoteCount = 0;
+	std::erase_if(m_vecLeaderVotes, [](ZEPlayerHandle hPlayer) {
+		return !hPlayer.IsValid();
+	});
 
-	for (int i = m_vecLeaderVotes.Count() - 1; i >= 0; i--)
-		if (m_vecLeaderVotes[i].IsValid())
-			iValidVoteCount++;
-		else
-			m_vecLeaderVotes.Remove(i);
-
-	return iValidVoteCount;
+	return m_vecLeaderVotes.size();
 }
 
 bool ZEPlayer::HasPlayerVotedLeader(ZEPlayer* pPlayer)
 {
-	FOR_EACH_VEC(m_vecLeaderVotes, i)
-	{
-		if (m_vecLeaderVotes[i] == pPlayer)
+	for (ZEPlayerHandle hPlayer : m_vecLeaderVotes)
+		if (hPlayer == pPlayer)
 			return true;
-	}
 
 	return false;
 }
 
 void ZEPlayer::AddLeaderVote(ZEPlayer* pPlayer)
 {
-	m_vecLeaderVotes.AddToTail(pPlayer->GetHandle());
+	m_vecLeaderVotes.push_back(pPlayer->GetHandle());
 }
 
 void ZEPlayer::PurgeLeaderVotes()
 {
-	m_vecLeaderVotes.Purge();
+	m_vecLeaderVotes.clear();
 }
 
 void ZEPlayer::StartGlow(Color color, int duration)
@@ -495,7 +520,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 			CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 			if (pModelParent)
-				addresses::UTIL_Remove(pModelParent);
+				pModelParent->Remove();
 
 			return -1.0f;
 		}
@@ -521,7 +546,7 @@ void ZEPlayer::StartGlow(Color color, int duration)
 		CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 		if (pModelParent)
-			addresses::UTIL_Remove(pModelParent);
+			pModelParent->Remove();
 
 		return -1.0f;
 	});
@@ -544,7 +569,7 @@ void ZEPlayer::EndGlow()
 	CBaseModelEntity* pModelParent = (CBaseModelEntity*)pParentSceneNode->m_pOwner();
 
 	if (pModelParent)
-		addresses::UTIL_Remove(pModelParent);
+		pModelParent->Remove();
 }
 
 void ZEPlayer::CycleButtonWatch()
@@ -629,6 +654,89 @@ void ZEPlayer::CreatePointOrient()
 
 	pOrient->AcceptInput("SetParent", "!activator", pPawn);
 	pOrient->AcceptInput("SetTarget", "!activator", pPawn);
+}
+
+void ZEPlayer::ToggleThirdPerson(float flDistance, bool bForce)
+{
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+
+	if (!pController)
+		return;
+
+	CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+
+	if (!pPawn)
+		return;
+
+	auto pCameraService = pPawn->GetCameraService();
+
+	if (!pCameraService)
+		return;
+
+	CCSCustomPlayerCamera* pCamera = (CCSCustomPlayerCamera*)pCameraService->m_hViewEntity().Get();
+
+	if (pCamera)
+	{
+		// Map is taking control of the camera, let it be
+		if (pCamera->AsPointViewControl() || !CloseEnough(pCamera->m_vecFollowOffset().z, THIRD_PERSON_CAMERA_MARKER))
+			return;
+
+		// Edit current camera offset if distance is different
+		if (!CloseEnough(pCamera->m_vecCameraOffset().x, flDistance) && !bForce)
+		{
+			pCamera->m_vecCameraOffset = Vector(flDistance, pPawn->m_bLeftHanded ? 15.f : -15.f, 0.f);
+			return;
+		}
+
+		// Camera matches ours, disable it
+		pCamera->m_nCameraMode = CUSTOM_CAMERA_MODE_DISABLED;
+		pCameraService->m_hViewEntity = nullptr;
+
+		ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX "You have disabled thirdperson.");
+
+		return;
+	}
+	else if (!m_hCustomCamera.Get())
+	{
+		// Try to find the player's camera if the map spawned it
+		CCSCustomPlayerCamera* pEnt = nullptr;
+
+		while ((pEnt = (CCSCustomPlayerCamera*)UTIL_FindEntityByClassname(pEnt, "custom_player_camera")))
+		{
+			if (pEnt->m_hPawn.Get() == pPawn)
+			{
+				pCamera = pEnt;
+				break;
+			}
+		}
+
+		if (!pCamera)
+		{
+			// No camera found, spawn one
+			pCamera = CreateEntityByName<CCSCustomPlayerCamera>("custom_player_camera");
+			pCamera->DispatchSpawn();
+		}
+
+		m_hCustomCamera = pCamera;
+	}
+	else
+	{
+		// Player is in first person and our camera exists, use it
+		pCamera = m_hCustomCamera;
+	}
+
+	pCamera->m_hPawn = pPawn;
+	pCamera->m_hFollowEntity = pPawn;
+	pCamera->m_nCameraMode = CUSTOM_CAMERA_MODE_FOLLOW_POSITION;
+	pCamera->m_bFollowEyes = true;
+	pCamera->m_vecFollowOffset = Vector(0.f, 0.f, THIRD_PERSON_CAMERA_MARKER); // HACK: Random tiny value to mark this as our camera
+	pCamera->m_vecCameraOffset = Vector(flDistance, pPawn->m_bLeftHanded ? 15.f : -15.f, 0.f);
+	pCamera->m_bClipCameraOffset = true;
+	pCamera->m_flCameraOffsetReturnStrength = 1.f;
+
+	pCameraService->m_hViewEntity = pCamera;
+
+	ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX "You have enabled thirdperson.");
 }
 
 void ZEPlayer::CreateEntwatchHud()
@@ -788,17 +896,17 @@ bool CPlayerManager::OnClientConnected(CPlayerSlot slot, uint64 xuid, const char
 		return false;
 	}
 
+	pPlayer->SetConnected();
+	m_vecPlayers[slot.Get()] = pPlayer;
+
 	// Sometimes clients can be already auth'd at this point
 	if (g_pEngineServer2->IsClientFullyAuthenticated(slot))
 		pPlayer->OnAuthenticated();
 
-	pPlayer->SetConnected();
-	m_vecPlayers[slot.Get()] = pPlayer;
-
 	ResetPlayerFlags(slot.Get());
 
 	g_pMapVoteSystem->ClearPlayerInfo(slot.Get());
-	g_pMapVoteSystem->ClearInvalidNominations();
+	g_pMapVoteSystem->OnPlayerCountChange();
 
 	return true;
 }
@@ -823,7 +931,7 @@ void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 	// One tick delay, to ensure player count decrements
 	CTimer::Create(0.01f, TIMERFLAG_MAP, []() {
 		g_pVoteManager->CheckRTVStatus();
-		g_pMapVoteSystem->ClearInvalidNominations();
+		g_pMapVoteSystem->OnPlayerCountChange();
 		return -1.0f;
 	});
 
@@ -836,16 +944,19 @@ void CPlayerManager::OnClientPutInServer(CPlayerSlot slot)
 
 	pPlayer->SetInGame(true);
 
-	if (!g_pSpawnGroupMgr)
+	if (!GetNetworkGameServer())
 		return;
 
-	CUtlVector<SpawnGroupHandle_t> vecActualSpawnGroups;
-	addresses::GetSpawnGroups(g_pSpawnGroupMgr, &vecActualSpawnGroups);
-
+	auto& spawnGroups = GetNetworkGameServer()->m_SpawnGroups;
 	CServerSideClient* pClient = GetClientBySlot(slot);
 
-	if (pClient && pClient->m_vecLoadedSpawnGroups.Count() != vecActualSpawnGroups.Count())
-		pClient->m_vecLoadedSpawnGroups = vecActualSpawnGroups;
+	if (pClient && pClient->m_LoadedSpawnGroups.Count() != spawnGroups.Count())
+	{
+		pClient->m_LoadedSpawnGroups.RemoveAll();
+
+		for (const auto& spawnGroup : spawnGroups)
+			pClient->m_LoadedSpawnGroups.AddToTail(spawnGroup.key);
+	}
 }
 
 void CPlayerManager::OnLateLoad()
@@ -925,6 +1036,21 @@ void CPlayerManager::OnValidateAuthTicket(ValidateAuthTicketResponse_t* pRespons
 	}
 }
 
+bool CPlayerManager::IsUsingThirdPerson(CCSPlayerPawn* pPawn)
+{
+	CPlayer_CameraServices* pCameraService = pPawn->GetCameraService();
+
+	if (!pCameraService)
+		return false;
+
+	CCSCustomPlayerCamera* pCamera = (CCSCustomPlayerCamera*)pCameraService->m_hViewEntity().Get();
+
+	if (!pCamera)
+		return false;
+
+	return !pCamera->AsPointViewControl() && CloseEnough(pCamera->m_vecFollowOffset().z, THIRD_PERSON_CAMERA_MARKER);
+}
+
 void CPlayerManager::CheckInfractions()
 {
 	if (!GetGlobals())
@@ -940,8 +1066,6 @@ void CPlayerManager::CheckInfractions()
 
 	g_pAdminSystem->SaveInfractions();
 }
-
-CConVar<bool> g_cvarFlashLightEnable("cs2f_flashlight_enable", FCVAR_NONE, "Whether to enable flashlights", false);
 
 void CPlayerManager::FlashLightThink()
 {
@@ -1106,9 +1230,9 @@ void CPlayerManager::SetupInfiniteAmmo()
 
 			CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pWeaponServices->m_hMyWeapons();
 
-			FOR_EACH_VEC(*weapons, i)
+			for (const auto& hWeapon : *weapons)
 			{
-				CBasePlayerWeapon* weapon = (*weapons)[i].Get();
+				CBasePlayerWeapon* weapon = hWeapon.Get();
 
 				if (!weapon)
 					continue;
@@ -1590,13 +1714,7 @@ ETargetError CPlayerManager::GetPlayersFromString(CCSPlayerController* pPlayer, 
 			if (!pTarget || !pTarget->IsController() || !pTarget->IsConnected() || pTarget->m_bIsHLTV)
 				continue;
 
-			std::string strName = pTarget->GetPlayerName();
-
-			// Ignore space that might be added by clan tag name swap trick
-			if (!strName.empty() && strName.back() == ' ')
-				strName.pop_back();
-
-			if ((!bExactName && V_stristr(strName.c_str(), pszTarget)) || !V_strcmp(strName.c_str(), pszTarget))
+			if ((!bExactName && V_stristr(pTarget->GetPlayerName(), pszTarget)) || !V_strcmp(pTarget->GetPlayerName(), pszTarget))
 			{
 				nType = ETargetType::PLAYER;
 				if (iNumClients == 1)
@@ -1707,7 +1825,7 @@ bool CPlayerManager::CanTargetPlayers(CCSPlayerController* pPlayer, const char* 
 
 ZEPlayer* CPlayerManager::GetPlayer(CPlayerSlot slot)
 {
-	if (slot.Get() < 0 || slot.Get() >= MAXPLAYERS)
+	if (slot.Get() < 0 || slot.Get() >= MAX_PLAYERS)
 		return nullptr;
 
 	return m_vecPlayers[slot.Get()];
@@ -1723,7 +1841,7 @@ ZEPlayer* CPlayerManager::GetPlayerFromUserId(uint16 userid)
 {
 	uint8 index = userid & 0xFF;
 
-	if (index >= MAXPLAYERS)
+	if (index >= MAX_PLAYERS)
 		return nullptr;
 
 	return m_vecPlayers[index];
@@ -1772,20 +1890,41 @@ void CPlayerManager::SetPlayerSilenceSound(int slot, bool set)
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, SOUND_STATUS_PREF_KEY_NAME, iStopPreferenceStatus + iSilencePreferenceStatus);
 }
 
-void CPlayerManager::SetPlayerZSounds(int slot, bool set)
+void CPlayerManager::SetPlayerZSounds(int slot, EZSoundsType mode)
 {
-	if (set)
-		m_nUsingZSounds |= ((uint64)1 << slot);
-	else
-		m_nUsingZSounds &= ~((uint64)1 << slot);
+	switch (mode)
+	{
+		case EZSoundsType::ON:
+			m_nUsingZSounds |= ((uint64)1 << slot);
+			m_nUsingZSoundsInfect |= ((uint64)1 << slot);
+			break;
+		case EZSoundsType::INFECT_ONLY:
+			m_nUsingZSounds &= ~((uint64)1 << slot);
+			m_nUsingZSoundsInfect |= ((uint64)1 << slot);
+			break;
+		case EZSoundsType::OFF:
+			m_nUsingZSounds &= ~((uint64)1 << slot);
+			m_nUsingZSoundsInfect &= ~((uint64)1 << slot);
+			break;
+	}
 
 	// Set the user prefs if the player is ingame
 	ZEPlayer* pPlayer = m_vecPlayers[slot];
 	if (!pPlayer) return;
 
-	uint64 iSlotMask = (uint64)1 << slot;
-	int iZSoundsPreferenceStatus = (m_nUsingZSounds & iSlotMask) ? 1 : 0;
+	int iZSoundsPreferenceStatus = (int)mode;
 	g_pUserPreferencesSystem->SetPreferenceInt(slot, ZSOUNDS_PREF_KEY_NAME, iZSoundsPreferenceStatus);
+}
+
+EZSoundsType CPlayerManager::GetPlayerZSoundsMode(int slot)
+{
+	if (m_nUsingZSounds & ((uint64)1 << slot))
+		return EZSoundsType::ON;
+
+	if (m_nUsingZSoundsInfect & ((uint64)1 << slot))
+		return EZSoundsType::INFECT_ONLY;
+
+	return EZSoundsType::OFF;
 }
 
 void CPlayerManager::SetPlayerStopDecals(int slot, bool set)
@@ -1824,25 +1963,30 @@ void CPlayerManager::ResetPlayerFlags(int slot)
 {
 	SetPlayerStopSound(slot, true);
 	SetPlayerSilenceSound(slot, false);
-	SetPlayerZSounds(slot, true);
+	SetPlayerZSounds(slot, EZSoundsType::ON);
 	SetPlayerStopDecals(slot, true);
 	SetPlayerNoShake(slot, false);
 }
 
 int CPlayerManager::GetOnlinePlayerCount(bool bCountBots)
 {
-	int iOnlinePlayers = 0;
+	// Minimal caching, sometimes we call this function a lot of times
+	static int iOnlinePlayers = 0;
+	static bool bBotsCached = bCountBots;
+	static float flLastUpdateTime = -1.0f;
 
-	if (!GetClientList())
+	if ((GetGlobals() && GetGlobals()->curtime == flLastUpdateTime && bBotsCached == bCountBots) || !GetClientList())
 		return iOnlinePlayers;
 
-	for (int i = 0; i < GetClientList()->Count(); i++)
-	{
-		CServerSideClient* pClient = (*GetClientList())[i];
+	iOnlinePlayers = 0;
+	bBotsCached = bCountBots;
 
+	if (GetGlobals())
+		flLastUpdateTime = GetGlobals()->curtime;
+
+	for (CServerSideClient* pClient : *GetClientList())
 		if (pClient && pClient->GetSignonState() >= SIGNONSTATE_CONNECTED && (bCountBots || !pClient->IsFakeClient()))
 			iOnlinePlayers++;
-	}
 
 	return iOnlinePlayers;
 }
@@ -1854,6 +1998,6 @@ void CPlayerManager::FullUpdateAllClients()
 	if (!pClients)
 		return;
 
-	FOR_EACH_VEC(*pClients, i)
-	(*pClients)[i]->ForceFullUpdate();
+	for (auto pClient : *pClients)
+		pClient->m_nDeltaTick = -1;
 }

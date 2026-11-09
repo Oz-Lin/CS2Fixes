@@ -1,7 +1,7 @@
 ﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -19,6 +19,7 @@
 
 #pragma once
 #include "platform.h"
+#include "tier0/dbg.h"
 
 #define CALL_VIRTUAL(retType, idx, ...) \
 	vmt::CallVirtual<retType>(idx, __VA_ARGS__)

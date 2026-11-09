@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -19,9 +19,9 @@
 
 #pragma once
 #include "adminsystem.h"
-#include "convar.h"
 #include "entity/ccsplayercontroller.h"
 #include "leader.h"
+#include "tier0/convar.h"
 #include <vector>
 
 class CChatCommand;
@@ -33,7 +33,6 @@ extern CConVar<bool> g_cvarEnableStopSound;
 extern CConVar<bool> g_cvarEnableNoShake;
 extern CConVar<float> g_cvarMaxShakeAmp;
 extern CConVar<bool> g_cvarEnableHide;
-extern CConVar<bool> g_cvarHideWeapons;
 
 #define CMDFLAG_NONE (0)
 #define CMDFLAG_NOHELP (1 << 0) // Don't show in !help menu

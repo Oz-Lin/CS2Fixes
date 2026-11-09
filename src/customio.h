@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -19,14 +19,14 @@
 
 #pragma once
 
-#include "convar.h"
-#include "utlstring.h"
+#include "shareddefs.h"
+#include "tier0/convar.h"
+#include "tier0/utlstring.h"
 
 class CEntityIdentity;
 class CEntityInstance;
 class CBaseEntity;
 class CCSPlayerPawn;
-enum DamageTypes_t : unsigned int;
 
 extern CConVar<CUtlString> g_cvarBurnParticle;
 
@@ -40,4 +40,4 @@ bool IgnitePawn(CCSPlayerPawn* pEntity,
 				CBaseEntity* pInflictor = nullptr,
 				CBaseEntity* pAttacker = nullptr,
 				CBaseEntity* pAbility = nullptr,
-				DamageTypes_t nDamageType = DamageTypes_t(8)); // DMG_BURN
+				DamageTypes_t nDamageType = DMG_BURN);

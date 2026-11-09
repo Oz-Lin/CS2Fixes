@@ -1,7 +1,7 @@
-﻿/**
+/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -18,11 +18,13 @@
  */
 
 #pragma once
+#include "entity2/entityclass.h"
+#include "entity2/variant.h"
 #include "platform.h"
 #include "stdint.h"
+#include "tier0/utlmap.h"
 #include "utils/module.h"
-#include "utlstring.h"
-#include "variant.h"
+#include "utils/vscript_function.h"
 
 namespace modules
 {
@@ -35,6 +37,7 @@ namespace modules
 	inline CModule* networksystem;
 	inline CModule* vphysics2;
 	inline CModule* matchmaking;
+	inline CModule* worldrenderer;
 #ifdef _WIN32
 	inline CModule* hammer;
 #endif
@@ -44,6 +47,7 @@ class CEntityInstance;
 class CEntityIdentity;
 class CBasePlayerController;
 class CCSPlayerController;
+class CBasePlayerPawn;
 class CCSPlayerPawn;
 class CBaseModelEntity;
 class CBaseEntity;
@@ -54,11 +58,14 @@ class CGameRules;
 class CEntityKeyValues;
 class IRecipientFilter;
 class CTakeDamageInfo;
+class CUtlSymbolTable;
 class CCSPlayer_WeaponServices;
 class CBasePlayerWeapon;
-class CSpawnGroupMgrGameSystem;
+struct CPulseArgumentPack;
+struct CPulseInputParamMap;
 struct EmitSound_t;
 struct StartSoundEventInfo;
+struct CTakeDamageResult;
 
 // Can't be forward-declared, can't include cgamerules.h.. just define it here
 struct CGcBanInformation_t
@@ -71,39 +78,45 @@ struct CGcBanInformation_t
 
 namespace addresses
 {
-	bool Initialize(CGameConfig* g_GameConfig);
-	bool InitializeBanMap(CGameConfig* g_GameConfig);
+	bool Initialize();
+	bool InitializeRipRelativeAddresses();
+	bool InitializeVScriptFunctions();
+	void* ResolveRipRelative(const char* pszName, int nOpcodeSize = 3);
 
-	inline CUtlMap<uint32, CGcBanInformation_t, uint32>* sm_mapGcBanInformation;
+	inline CUtlOrderedMap<uint32, CGcBanInformation_t, uint32>* sm_mapGcBanInformation;
+	inline CUtlSymbolTable* CCSAddonManager_CommandWhitelist;
 
 	inline void(FASTCALL* SetGroundEntity)(CBaseEntity* ent, CBaseEntity* ground, CBaseEntity* unk3);
-	inline void(FASTCALL* SetGravityScale)(CBaseEntity*, float);
 	inline void(FASTCALL* CCSPlayerController_SwitchTeam)(CCSPlayerController* pController, uint32 team);
 	inline void(FASTCALL* CBasePlayerController_SetPawn)(CBasePlayerController* pController, CCSPlayerPawn* pPawn, bool a3, bool a4, bool a5, bool a6);
-	inline void(FASTCALL* CBaseModelEntity_SetModel)(CBaseModelEntity* pModel, const char* szModel);
-	inline void(FASTCALL* UTIL_Remove)(CEntityInstance*);
+	inline void(FASTCALL* CBaseModelEntity_SetModel)(CBaseModelEntity* pModel, const char* pszModel);
+	inline BASEPTR UTIL_Remove;
 
 	inline void(FASTCALL* CEntitySystem_AddEntityIOEvent)(CEntitySystem* pEntitySystem, CEntityInstance* pTarget, const char* pszInput,
-														  CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, float flDelay, int outputID, void*, void*);
+														  CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, float flDelay, CPulseArgumentPack* pArgumentPack, CPulseInputParamMap* pParamMap);
 	inline void(FASTCALL* CEntityInstance_AcceptInput)(CEntityInstance* pThis, const char* pInputName,
-													   CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, int nOutputID, void*);
+													   CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value);
 
 	inline CBaseEntity*(FASTCALL* CGameEntitySystem_FindEntityByClassName)(CEntitySystem* pEntitySystem, CEntityInstance* pStartEntity, const char* szName);
 
 	inline CBaseEntity*(FASTCALL* CGameEntitySystem_FindEntityByName)(CEntitySystem* pEntitySystem, CEntityInstance* pStartEntity, const char* szName,
 																	  CEntityInstance* pSearchingEntity, CEntityInstance* pActivator, CEntityInstance* pCaller,
 																	  IEntityFindFilter* pFilter);
-	inline void(FASTCALL* CGameRules_TerminateRound)(CGameRules* pGameRules, float delay, unsigned int reason, int64 a4, unsigned int a5);
+	inline void(FASTCALL* CGameRules_TerminateRound)(CGameRules* pGameRules, float delay, unsigned int reason, int64 a4);
 	inline CBaseEntity*(FASTCALL* CreateEntityByName)(const char* className, int iForceEdictIndex);
 	inline void(FASTCALL* DispatchSpawn)(CBaseEntity* pEntity, CEntityKeyValues* pEntityKeyValues);
-	inline void(FASTCALL* CEntityIdentity_SetEntityName)(CEntityIdentity* pEntity, const char* pName);
-	inline void(FASTCALL* CBaseEntity_EmitSoundParams)(CBaseEntity* pEntity, const char* pszSound, int nPitch, float flVolume, float flDelay);
 	inline int(FASTCALL* DispatchParticleEffect)(const char* pszParticleName, int iAttachType, CBaseEntity* pEntity,
 												 char iAttachmentPoint, CUtlSymbolLarge iAttachmentName, bool bResetAllParticlesOnEntity, int nSplitScreenPlayerSlot, IRecipientFilter* a7, byte* a8);
 	inline StartSoundEventInfo(FASTCALL* CBaseEntity_EmitSoundFilter)(IRecipientFilter& filter, CEntityIndex ent, const EmitSound_t& params);
 	inline void(FASTCALL* CBaseEntity_SetMoveType)(CBaseEntity* pThis, MoveType_t nMoveType, MoveCollide_t nMoveCollide);
-	inline void(FASTCALL* CTakeDamageInfo_Constructor)(CTakeDamageInfo* pThis, CBaseEntity* pInflictor, CBaseEntity* pAttacker, CBaseEntity* pAbility,
-													   const Vector* vecDamageForce, const Vector* vecDamagePosition, float flDamage, int bitsDamageType, int iCustomDamage, void* a10);
 	inline void(FASTCALL* CCSPlayer_WeaponServices_EquipWeapon)(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pPlayerWeapon);
-	inline void(FASTCALL* GetSpawnGroups)(CSpawnGroupMgrGameSystem* pSpawnGroupMgr, CUtlVector<SpawnGroupHandle_t>* pList);
+	inline void(FASTCALL* CBasePlayerPawn_SnapViewAngles)(CBasePlayerPawn* pPawn, QAngle* pAngles);
+	inline int64(FASTCALL* CBaseEntity_TakeDamageOld)(CBaseEntity* pThis, CTakeDamageInfo* pInfo, CTakeDamageResult* pResult);
+
+	inline CVScriptFunction<void, CBaseEntity, float> SetGravityScale;
+	inline CVScriptFunction<void, CBaseEntity, const char*> ScriptSetEntityName;
+	inline CVScriptFunction<void, CBaseEntity, const char*, int, float, float> ScriptEmitSoundParams;
+	inline CVScriptFunction<void, CBaseEntity, int> ChangeTeam;
+	inline CVScriptFunction<bool, CBaseEntity> IsPlayerPawn;
+	inline CVScriptFunction<bool, CBaseEntity> IsPlayerController;
 } // namespace addresses

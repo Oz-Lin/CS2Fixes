@@ -1,7 +1,7 @@
 ﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -28,12 +28,13 @@
 #include "globaltypes.h"
 #include "mathlib/vector.h"
 #include "schema.h"
-#include "tier1/utlstringtoken.h"
+#include "tier0/utlstringtoken.h"
 
 class CGameUI;
 class CEnvHudHint;
 class CPointViewControl;
 class CBasePlayerWeapon;
+class CGamePlayerEquip;
 
 class CGameSceneNode
 {
@@ -148,7 +149,6 @@ public:
 	SCHEMA_FIELD(float, m_flFriction)
 	SCHEMA_FIELD(float, m_flGravityScale)
 	SCHEMA_FIELD(float, m_flTimeScale)
-	SCHEMA_FIELD(float, m_flSpeed)
 	SCHEMA_FIELD(CUtlString, m_sUniqueHammerID);
 	SCHEMA_FIELD(CUtlSymbolLarge, m_target);
 	SCHEMA_FIELD(CUtlSymbolLarge, m_iGlobalname);
@@ -166,18 +166,18 @@ public:
 
 	void SetName(const char* pName)
 	{
-		addresses::CEntityIdentity_SetEntityName(m_pEntity, pName);
+		addresses::ScriptSetEntityName(this, pName);
 	}
 
 	void TakeDamage(CTakeDamageInfo& info)
 	{
-		Detour_CBaseEntity_TakeDamageOld(this, &info, 0);
+		addresses::CBaseEntity_TakeDamageOld(this, &info, 0);
 	}
 
-	void Teleport(const Vector* position, const QAngle* angles, const Vector* velocity)
+	void Teleport(const Vector* pPosition, const QAngle* pAngles, const Vector* pVelocity)
 	{
 		static int offset = g_GameConfig->GetOffset("Teleport");
-		CALL_VIRTUAL(void, offset, this, position, angles, velocity);
+		CALL_VIRTUAL(void, offset, this, pPosition, pAngles, pVelocity);
 	}
 
 	void SetCollisionGroup(StandardCollisionGroups_t nCollisionGroup)
@@ -197,19 +197,17 @@ public:
 
 	bool IsPawn()
 	{
-		static int offset = g_GameConfig->GetOffset("IsPlayerPawn");
-		return CALL_VIRTUAL(bool, offset, this);
+		return addresses::IsPlayerPawn(this);
 	}
 
 	bool IsController()
 	{
-		static int offset = g_GameConfig->GetOffset("IsPlayerController");
-		return CALL_VIRTUAL(bool, offset, this);
+		return addresses::IsPlayerController(this);
 	}
 
 	void AcceptInput(const char* pInputName, variant_t value = variant_t(""), CEntityInstance* pActivator = nullptr, CEntityInstance* pCaller = nullptr)
 	{
-		addresses::CEntityInstance_AcceptInput(this, pInputName, pActivator, pCaller, &value, 0, nullptr);
+		addresses::CEntityInstance_AcceptInput(this, pInputName, pActivator, pCaller, &value);
 	}
 
 	bool IsAlive() { return m_lifeState == LifeState_t::LIFE_ALIVE; }
@@ -227,7 +225,7 @@ public:
 	// Emit a sound event
 	void EmitSound(const char* pszSound, int nPitch = 100, float flVolume = 1.0, float flDelay = 0.0)
 	{
-		addresses::CBaseEntity_EmitSoundParams(this, pszSound, nPitch, flVolume, flDelay);
+		addresses::ScriptEmitSoundParams(this, pszSound, nPitch, flVolume, flDelay);
 	}
 
 	StartSoundEventInfo EmitSoundFilter(IRecipientFilter& filter, const char* pszSound, float flVolume = 1.0, float flPitch = 1.0)
@@ -263,7 +261,7 @@ public:
 
 	void Remove()
 	{
-		addresses::UTIL_Remove(this);
+		(this->*addresses::UTIL_Remove)();
 	}
 
 	void SetMoveType(MoveType_t nMoveType)
@@ -331,6 +329,14 @@ public:
 	{
 		if (V_StringHasPrefixCaseSensitive(GetClassname(), "weapon_"))
 			return reinterpret_cast<CBasePlayerWeapon*>(this);
+		return nullptr;
+	}
+
+	[[nodiscard]] CGamePlayerEquip* AsGamePlayerEquip()
+	{
+		if (V_strcasecmp(GetClassname(), "game_player_equip") == 0)
+			return reinterpret_cast<CGamePlayerEquip*>(this);
+
 		return nullptr;
 	}
 

@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,8 +21,8 @@
 #include "commands.h"
 #include "ctimer.h"
 #include "entity/cgamerules.h"
-#include "icvar.h"
 #include "playermanager.h"
+#include "tier0/convar.h"
 
 #include "tier0/memdbgon.h"
 
@@ -467,11 +467,11 @@ CON_COMMAND_CHAT_FLAGS(disablertv, "- Disable the ability for players to vote to
 		return;
 	}
 
-	const char* pszCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
+	std::string strCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
 
 	g_pVoteManager->SetRTVState(ERTVState::BLOCKED_BY_ADMIN);
 
-	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "disabled vote for RTV.", pszCommandPlayerName);
+	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "disabled vote for RTV.", strCommandPlayerName.c_str());
 }
 
 CON_COMMAND_CHAT_FLAGS(enablertv, "- Restore the ability for players to vote to end current map sooner", ADMFLAG_CHANGEMAP)
@@ -488,11 +488,11 @@ CON_COMMAND_CHAT_FLAGS(enablertv, "- Restore the ability for players to vote to 
 		return;
 	}
 
-	const char* pszCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
+	std::string strCommandPlayerName = player ? player->GetPlayerName() : CONSOLE_NAME;
 
 	g_pVoteManager->SetRTVState(ERTVState::RTV_ALLOWED);
 
-	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "enabled vote for RTV.", pszCommandPlayerName);
+	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "enabled vote for RTV.", strCommandPlayerName.c_str());
 }
 
 CON_COMMAND_CHAT(extendsleft, "- Display amount of extends left for the current map")
@@ -563,7 +563,7 @@ void CVoteManager::ExtendMap(int iMinutes, bool bIncrementiExtends, bool bAllowE
 	{
 		m_iExtends++;
 
-		for (int i = 0; i < MAXPLAYERS; i++)
+		for (int i = 0; i < MAX_PLAYERS; i++)
 		{
 			ZEPlayer* pPlayer = g_playerManager->GetPlayer(i);
 			if (pPlayer)
@@ -704,6 +704,9 @@ bool CVoteManager::CheckRTVStatus()
 	{
 		m_RTVState = ERTVState::POST_RTV_SUCCESSFULL;
 		m_ExtendState = EExtendState::POST_RTV;
+
+		if (g_pPanoramaVoteHandler->IsVoteInProgress())
+			g_pPanoramaVoteHandler->EndVote(YesNoVoteEndReason::VoteEnd_Cancelled);
 
 		static ConVarRefAbstract mp_timelimit("mp_timelimit");
 		mp_timelimit.SetFloat(0.01);

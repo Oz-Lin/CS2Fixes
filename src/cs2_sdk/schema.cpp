@@ -1,7 +1,7 @@
 ﻿/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,6 +21,7 @@
 
 #include "../common.h"
 #include "entity/cbaseentity.h"
+#include "entity2/entityclass.h"
 #include "plat.h"
 #include "schemasystem/schemasystem.h"
 
@@ -31,14 +32,20 @@ using SchemaTableMap_t = std::map<uint32_t, SchemaKeyValueMap_t>;
 
 static constexpr uint32_t g_ChainKey = hash_32_fnv1a_const("__m_pChainEntity");
 
-static bool IsFieldNetworked(SchemaClassFieldData_t& field)
+static bool IsFieldNetworked(const char* cppName, SchemaClassFieldData_t& field)
 {
-	for (int i = 0; i < field.m_nStaticMetadataCount; i++)
-	{
-		static auto networkEnabled = hash_32_fnv1a_const("MNetworkEnable");
-		if (networkEnabled == hash_32_fnv1a_const(field.m_pStaticMetadata[i].m_pszName))
-			return true;
-	}
+	if (!GameEntitySystem())
+		return false;
+
+	// Just use a random class to get access to the full database, as some schema classes don't have entity representations
+	CNetworkSerializerCodeGenDatabase* pDatabase = GameEntitySystem()->FindClassByName("CBaseEntity")->m_NetworkSerializerInfo->m_pDatabase;
+	int index = pDatabase->m_ClassInfos.Find(cppName);
+
+	if (index == pDatabase->m_ClassInfos.InvalidIndex())
+		return false;
+
+	if (pDatabase->m_ClassInfos[index]->FindField(field.m_pName))
+		return true;
 
 	return false;
 }
@@ -47,33 +54,33 @@ static bool IsFieldNetworked(SchemaClassFieldData_t& field)
 // (e.g. CCSGameRules -> CTeamplayRules -> CMultiplayRules -> CGameRules, in this case it's in CGameRules)
 static void InitChainOffset(SchemaClassInfoData_t* pClassInfo, SchemaKeyValueMap_t& keyValueMap)
 {
-	short fieldsSize = pClassInfo->m_nFieldCount;
+	uint16 fieldsSize = pClassInfo->m_nNumFields;
 	SchemaClassFieldData_t* pFields = pClassInfo->m_pFields;
 
 	for (int i = 0; i < fieldsSize; ++i)
 	{
 		SchemaClassFieldData_t& field = pFields[i];
 
-		if (hash_32_fnv1a_const(field.m_pszName) != g_ChainKey)
+		if (hash_32_fnv1a_const(field.m_pName) != g_ChainKey)
 			continue;
 
 		std::pair<uint32_t, SchemaKey> keyValuePair;
 		keyValuePair.first = g_ChainKey;
 		keyValuePair.second.offset = field.m_nSingleInheritanceOffset;
-		keyValuePair.second.networked = IsFieldNetworked(field);
+		keyValuePair.second.networked = IsFieldNetworked(pClassInfo->m_pName, field);
 
 		keyValueMap.insert(keyValuePair);
 		return;
 	}
 
 	// Not the base class yet, keep looking
-	if (pClassInfo->m_nBaseClassCount)
+	if (pClassInfo->m_nNumBaseClasses)
 		return InitChainOffset(pClassInfo->m_pBaseClasses[0].m_pClass, keyValueMap);
 }
 
 static void InitSchemaKeyValueMap(SchemaClassInfoData_t* pClassInfo, SchemaKeyValueMap_t& keyValueMap)
 {
-	short fieldsSize = pClassInfo->m_nFieldCount;
+	uint16 fieldsSize = pClassInfo->m_nNumFields;
 	SchemaClassFieldData_t* pFields = pClassInfo->m_pFields;
 
 	for (int i = 0; i < fieldsSize; ++i)
@@ -81,30 +88,28 @@ static void InitSchemaKeyValueMap(SchemaClassInfoData_t* pClassInfo, SchemaKeyVa
 		SchemaClassFieldData_t& field = pFields[i];
 
 #ifdef _DEBUG
-		Message("%s::%s found at -> 0x%X - %llx\n", pClassInfo->m_pszName, field.m_pszName, field.m_nSingleInheritanceOffset, &field);
+		Message("%s::%s found at -> 0x%X - %llx\n", pClassInfo->m_pName, field.m_pName, field.m_nSingleInheritanceOffset, &field);
 #endif
 
 		std::pair<uint32_t, SchemaKey> keyValuePair;
-		keyValuePair.first = hash_32_fnv1a_const(field.m_pszName);
+		keyValuePair.first = hash_32_fnv1a_const(field.m_pName);
 		keyValuePair.second.offset = field.m_nSingleInheritanceOffset;
-		keyValuePair.second.networked = IsFieldNetworked(field);
+		keyValuePair.second.networked = IsFieldNetworked(pClassInfo->m_pName, field);
+
+		if (field.m_pType->m_eTypeCategory == SCHEMA_TYPE_ATOMIC && field.m_pType->m_eAtomicCategory == SCHEMA_ATOMIC_COLLECTION_OF_T)
+			keyValuePair.second.manipulator = static_cast<CSchemaType_Atomic_CollectionOfT*>(field.m_pType)->m_pfnManipulator;
 
 		keyValueMap.insert(keyValuePair);
 	}
 
 	// If this is a child class there might be a parent class with __m_pChainEntity
-	if (!keyValueMap.contains(g_ChainKey) && pClassInfo->m_nBaseClassCount)
+	if (!keyValueMap.contains(g_ChainKey) && pClassInfo->m_nNumBaseClasses)
 		InitChainOffset(pClassInfo->m_pBaseClasses[0].m_pClass, keyValueMap);
 }
 
 static bool InitSchemaFieldsForClass(SchemaTableMap_t& tableMap, const char* className, uint32_t classKey)
 {
-	CSchemaSystemTypeScope* pType = g_pSchemaSystem->FindTypeScopeForModule(MODULE_PREFIX "server" MODULE_EXT);
-
-	if (!pType)
-		return false;
-
-	SchemaClassInfoData_t* pClassInfo = pType->FindDeclaredClass(className).Get();
+	SchemaClassInfoData_t* pClassInfo = schema::GetSchemaClassInfo(className);
 
 	if (!pClassInfo)
 	{
@@ -152,6 +157,16 @@ SchemaKey schema::GetOffset(const char* className, uint32_t classKey, const char
 	return tableMap[memberKey];
 }
 
+SchemaClassInfoData_t* schema::GetSchemaClassInfo(const char* className)
+{
+	static CSchemaSystemTypeScope* pType = g_pSchemaSystem->FindTypeScopeForModule(MODULE_PREFIX "server" MODULE_EXT);
+
+	if (!pType)
+		return nullptr;
+
+	return pType->FindDeclaredClass(className).Get();
+}
+
 void NetworkVarStateChanged(uintptr_t pNetworkVar, uint32_t nOffset, uint32 nNetworkStateChangedOffset)
 {
 	NetworkStateChangedData data(nOffset);
@@ -166,7 +181,7 @@ void EntityNetworkStateChanged(uintptr_t pEntity, uint nOffset)
 
 void ChainNetworkStateChanged(uintptr_t pNetworkVarChainer, uint nLocalOffset)
 {
-	CEntityInstance* pEntity = reinterpret_cast<CNetworkVarChainer*>(pNetworkVarChainer)->m_pEntity;
+	CEntityInstance* pEntity = reinterpret_cast<CNetworkVarChainer*>(pNetworkVarChainer)->GetObject();
 
 	if (pEntity)
 		pEntity->NetworkStateChanged(NetworkStateChangedData(nLocalOffset, -1, reinterpret_cast<CNetworkVarChainer*>(pNetworkVarChainer)->m_PathIndex));

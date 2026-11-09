@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,6 +20,7 @@
 #include "utils.h"
 #include "../cs2fixes.h"
 #include "../gameconfig.h"
+#include "engine2/ivengineserver2.h"
 
 void Message(const char* msg, ...)
 {
@@ -52,8 +53,7 @@ CUtlVector<CServerSideClient*>* GetClientList()
 	if (!GetNetworkGameServer())
 		return nullptr;
 
-	static int offset = g_GameConfig->GetOffset("CNetworkGameServer_ClientList");
-	return (CUtlVector<CServerSideClient*>*)(&GetNetworkGameServer()[offset]);
+	return (CUtlVector<CServerSideClient*>*)&GetNetworkGameServer()->m_Clients;
 }
 
 CServerSideClient* GetClientBySlot(CPlayerSlot slot)
@@ -77,4 +77,20 @@ std::string StringToLower(std::string strValue)
 		strValue[i] = tolower(strValue[i]);
 
 	return strValue;
+}
+
+ISteamUGC* GetSteamUGC()
+{
+	if (g_pEngineServer2->IsDedicatedServer())
+		return SteamGameServerUGC();
+	else
+		return SteamUGC();
+}
+
+ISteamHTTP* GetSteamHTTP()
+{
+	if (g_pEngineServer2->IsDedicatedServer())
+		return SteamGameServerHTTP();
+	else
+		return SteamHTTP();
 }

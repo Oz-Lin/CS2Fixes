@@ -1,7 +1,7 @@
-﻿/**
+/**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,7 +21,6 @@
 #include "ctimer.h"
 #include "entity.h"
 
-#include "entity/cbaseplayercontroller.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
 #include "entity/cgameplayerequip.h"
@@ -67,9 +66,9 @@ static void StripPlayer(CCSPlayerPawn* pPawn, const std::unordered_set<uint32_t>
 	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pWeaponService->m_hMyWeapons();
 	std::vector<CBasePlayerWeapon*> vecWeaponsToRemove;
 
-	FOR_EACH_VEC(*weapons, i)
+	for (const auto& hWeapon : *weapons)
 	{
-		CBasePlayerWeapon* weapon = (*weapons)[i].Get();
+		CBasePlayerWeapon* weapon = hWeapon.Get();
 
 		if (!weapon)
 			continue;
@@ -122,7 +121,7 @@ namespace CTriggerGravityHandler
 {
 	static std::unordered_map<uint32_t, float> s_gravityMap;
 
-	void OnPrecache(CBaseEntity* pEntity, const CEntityKeyValues* kv)
+	void OnPrecache(CTriggerGravity* pEntity, const CEntityKeyValues* kv)
 	{
 		const auto pGravity = kv->GetKeyValue("gravity");
 		const auto pHammerId = kv->GetKeyValue("hammerUniqueId");
@@ -135,9 +134,9 @@ namespace CTriggerGravityHandler
 		s_gravityMap[hEntity] = flGravity;
 	}
 
-	bool GravityTouching(CBaseEntity* pEntity, CBaseEntity* pOther)
+	bool GravityTouching(CTriggerGravity* pEntity, CBaseEntity* pOther)
 	{
-		const auto hEntity = GetEntityUnique(pEntity);
+		const auto hEntity = GetEntityUnique((CBaseEntity*)pEntity);
 		if (hEntity == ENTITY_UNIQUE_INVALID)
 			return false;
 
@@ -151,7 +150,7 @@ namespace CTriggerGravityHandler
 		return true;
 	}
 
-	void OnEndTouch(CBaseEntity* pEntity, CBaseEntity* pOther)
+	void OnEndTouch(CTriggerGravity* pEntity, CBaseEntity* pOther)
 	{
 		if (pOther->IsPawn())
 			pOther->SetGravityScale(1);
@@ -190,7 +189,7 @@ namespace CGamePlayerEquipHandler
 		}
 	}
 
-	void TriggerForAllPlayers(CGamePlayerEquip* pEntity, InputData_t* pInput)
+	void TriggerForAllPlayers(CGamePlayerEquip* pEntity)
 	{
 		const auto flags = pEntity->m_spawnflags();
 
@@ -214,15 +213,14 @@ namespace CGamePlayerEquipHandler
 		}
 	}
 
-	bool TriggerForActivatedPlayer(CGamePlayerEquip* pEntity, InputData_t* pInput)
+	bool TriggerForActivatedPlayer(CGamePlayerEquip* pEntity, CBaseEntity* pActivator, variant_t* value)
 	{
-		const auto pCaller = pInput->pActivator;
-		const auto pszWeapon = ((pInput->value.m_type == FIELD_CSTRING || pInput->value.m_type == FIELD_STRING) && pInput->value.m_pszString) ? pInput->value.m_pszString : nullptr;
+		const auto pszWeapon = (value->GetType() == FIELD_CSTRING || value->GetType() == FIELD_STRING) ? value->ToString() : nullptr;
 
-		if (!pCaller || !pCaller->IsPawn())
+		if (!pActivator || !pActivator->IsPawn())
 			return true;
 
-		const auto pPawn = reinterpret_cast<CCSPlayerPawn*>(pCaller);
+		const auto pPawn = reinterpret_cast<CCSPlayerPawn*>(pActivator);
 		const auto flags = pEntity->m_spawnflags();
 
 		if (flags & CGamePlayerEquip::SF_PLAYEREQUIP_STRIPFIRST)
@@ -242,7 +240,7 @@ namespace CGamePlayerEquipHandler
 		if (!pItemServices)
 			return true;
 
-		if (pszWeapon && V_strcmp(pszWeapon, "(null)"))
+		if (pszWeapon && *pszWeapon && V_strcmp(pszWeapon, "(null)"))
 		{
 			pItemServices->GiveNamedItemAws(pszWeapon);
 			// Don't execute game function (we fixed string param)
@@ -252,20 +250,29 @@ namespace CGamePlayerEquipHandler
 		return true;
 	}
 
-	void OnPrecache(CGamePlayerEquip* pEntity, const CEntityKeyValues* kv)
+	// Returns true if item_* classes were left out of pFilteredKV
+	bool OnPrecache(CGamePlayerEquip* pEntity, const CEntityKeyValues* kv, CEntityKeyValues* pFilteredKV)
 	{
 		const auto pHammerId = kv->GetKeyValue("hammerUniqueId");
-		if (!pHammerId)
-			return;
-
 		auto list = std::unordered_set<uint32_t>();
+		bool bFiltered = false;
 
 		for (auto i = 0; i < CGamePlayerEquip::MAX_EQUIPMENTS_SIZE; i++)
 		{
 			char key[32];
 			snprintf(key, sizeof(key), "weapon%d", i);
 			const auto val = kv->GetString(key);
-			if (val && strlen(val) > 1)
+
+			if (!val || !*val)
+				continue;
+
+			// Precaching item_* classes crashes since the 2026-10-22 CS2 update
+			if (!V_strnicmp(val, "item_", 5))
+				bFiltered = true;
+			else
+				pFilteredKV->SetString(key, val);
+
+			if (strlen(val) > 1)
 			{
 				const auto slot = CCSPlayer_ItemServices::GetItemGearSlot(val);
 				if (slot != GEAR_SLOT_INVALID && slot != GEAR_SLOT_UTILITY)
@@ -273,11 +280,13 @@ namespace CGamePlayerEquipHandler
 			}
 		}
 
-		if (!list.empty())
+		if (pHammerId && !list.empty())
 		{
 			const auto hEntity = MurmurHash2LowerCase(pHammerId->GetString(), ENTITY_MURMURHASH_SEED);
 			s_PlayerEquipMap[hEntity] = list;
 		}
+
+		return bFiltered;
 	}
 
 	static void Shutdown()
@@ -494,7 +503,7 @@ namespace CPointViewControlHandler
 {
 	struct ViewControl
 	{
-		CUtlVector<CHandle<CCSPlayerPawn>> m_players;
+		std::vector<CHandle<CCSPlayerPawn>> m_players;
 		std::string m_viewTarget;
 		std::string m_name;
 	};
@@ -590,7 +599,8 @@ namespace CPointViewControlHandler
 
 		for (auto& [vk, vc] : s_repository)
 		{
-			if (const auto index = vc.m_players.Find(handle); index > -1)
+			const auto iterator = std::find(vc.m_players.begin(), vc.m_players.end(), handle);
+			if (iterator != vc.m_players.end())
 			{
 				if (vk == static_cast<uint>(key))
 				{
@@ -598,14 +608,15 @@ namespace CPointViewControlHandler
 					return false;
 				}
 
-				vc.m_players.Remove(index);
+				vc.m_players.erase(iterator);
 				UpdatePlayerState(pPawn, INVALID_HANDLE, false, RESET_FOV);
 				Warning("PointViewControl %s already enabled for %s\n", vc.m_name.c_str(), pController->GetPlayerName());
 				break;
 			}
 		}
 
-		return it->second.m_players.AddToTail(handle) >= 0;
+		it->second.m_players.push_back(handle);
+		return true;
 	}
 	bool OnDisable(CPointViewControl* pEntity, CBaseEntity* pActivator)
 	{
@@ -632,7 +643,14 @@ namespace CPointViewControlHandler
 
 		UpdatePlayerState(pPawn, INVALID_HANDLE, false, RESET_FOV);
 
-		return it->second.m_players.FindAndRemove(handle);
+		auto& vecPlayers = it->second.m_players;
+		auto iterator = std::find(vecPlayers.begin(), vecPlayers.end(), handle);
+
+		if (iterator == vecPlayers.end())
+			return false;
+
+		vecPlayers.erase(iterator);
+		return true;
 	}
 	bool OnEnableAll(CPointViewControl* pEntity)
 	{
@@ -655,9 +673,11 @@ namespace CPointViewControlHandler
 
 			for (auto& [vk, vc] : s_repository)
 			{
-				if (const auto index = vc.m_players.Find(handle); index > -1)
+				auto iterator = std::find(vc.m_players.begin(), vc.m_players.end(), handle);
+
+				if (iterator != vc.m_players.end())
 				{
-					vc.m_players.Remove(index);
+					vc.m_players.erase(iterator);
 					if (vk == static_cast<uint>(key))
 						continue;
 					UpdatePlayerState(pPawn, INVALID_HANDLE, false, RESET_FOV);
@@ -665,7 +685,7 @@ namespace CPointViewControlHandler
 				}
 			}
 
-			it->second.m_players.AddToTail(handle);
+			it->second.m_players.push_back(handle);
 		}
 
 		return true;
@@ -677,15 +697,11 @@ namespace CPointViewControlHandler
 		if (it == s_repository.end())
 			return false;
 
-		FOR_EACH_VEC(it->second.m_players, i)
-		{
-			const auto& handle = it->second.m_players.Element(i);
-
-			if (const auto player = handle.Get())
+		for (auto hPawn : it->second.m_players)
+			if (CCSPlayerPawn* player = hPawn.Get())
 				UpdatePlayerState(player, INVALID_HANDLE, false, RESET_FOV);
-		}
 
-		it->second.m_players.Purge();
+		it->second.m_players.clear();
 
 		return true;
 	}
@@ -698,13 +714,9 @@ namespace CPointViewControlHandler
 			const auto entity = CHandle<CPointViewControl>(it->first).Get();
 			if (!entity)
 			{
-				FOR_EACH_VEC(it->second.m_players, i)
-				{
-					const auto& handle = it->second.m_players.Element(i);
-
-					if (const auto player = handle.Get())
+				for (auto hPawn : it->second.m_players)
+					if (CCSPlayerPawn* player = hPawn.Get())
 						UpdatePlayerState(player, INVALID_HANDLE, false, RESET_FOV);
-				}
 
 				it = s_repository.erase(it);
 			}
@@ -725,53 +737,47 @@ namespace CPointViewControlHandler
 				continue;
 			}
 
-			if (vc.m_players.Count() == 0)
+			if (vc.m_players.empty())
 				continue;
 
 			const auto pTarget = entity->GetTargetCameraEntity();
 			if (!pTarget)
 			{
-				FOR_EACH_VEC(vc.m_players, i)
-				{
-					const auto& handle = vc.m_players.Element(i);
-
-					if (const auto player = handle.Get())
+				for (auto hPawn : vc.m_players)
+					if (CCSPlayerPawn* player = hPawn.Get())
 						UpdatePlayerState(player, INVALID_HANDLE, false, RESET_FOV);
-				}
-				vc.m_players.Purge();
+				vc.m_players.clear();
 				continue;
 			}
 
-			FOR_EACH_VEC(vc.m_players, i)
+			for (auto iterator = vc.m_players.begin(); iterator != vc.m_players.end();)
 			{
-				const auto& handle = vc.m_players.Element(i);
-				const auto player = handle.Get();
+				auto hPawn = *iterator;
+				CCSPlayerPawn* player = hPawn.Get();
 				if (!player)
 				{
-					vc.m_players.Remove(i--);
+					iterator = vc.m_players.erase(iterator);
 					continue;
 				}
 				if (!player->IsAlive())
 				{
 					UpdatePlayerState(player, INVALID_HANDLE, false, RESET_FOV);
-					vc.m_players.Remove(i--);
+					iterator = vc.m_players.erase(iterator);
 					continue;
 				}
 
 				UpdatePlayerState(player, pTarget->GetHandle(), entity->HasFrozen(), entity->HasFOV() ? entity->GetFOV() : INVALID_FOV, entity->HasDisarm());
+				iterator++;
 			}
 		}
 	}
 	bool IsViewControl(CCSPlayerPawn* pPawn)
 	{
-		const auto handle = pPawn->GetHandle().ToInt();
 		for (const auto& [vk, vc] : s_repository)
 		{
-			FOR_EACH_VEC(vc.m_players, i)
-			{
-				if (vc.m_players.Element(i).ToInt() == handle)
+			for (auto hPawn : vc.m_players)
+				if (hPawn == pPawn->GetHandle())
 					return true;
-			}
 		}
 		return false;
 	}
@@ -779,14 +785,10 @@ namespace CPointViewControlHandler
 	{
 		for (auto& [vk, vc] : s_repository)
 		{
-			FOR_EACH_VEC(vc.m_players, i)
-			{
-				const auto& handle = vc.m_players.Element(i);
-
-				if (const auto player = handle.Get())
+			for (auto hPawn : vc.m_players)
+				if (CCSPlayerPawn* player = hPawn.Get())
 					UpdatePlayerState(player, INVALID_HANDLE, false, RESET_FOV);
-			}
-			vc.m_players.Purge();
+			vc.m_players.clear();
 		}
 		s_repository.clear();
 	}

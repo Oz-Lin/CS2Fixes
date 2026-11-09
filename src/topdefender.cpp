@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -21,7 +21,6 @@
 #include "commands.h"
 #include "common.h"
 #include "ctimer.h"
-#include "detours.h"
 #include "entity/ccsplayercontroller.h"
 #include "idlemanager.h"
 #include "playermanager.h"
@@ -41,7 +40,7 @@ CConVar<bool> g_cvarTopDefenderPrint("cs2f_topdefender_print", FCVAR_NONE, "Whet
 CConVar<float> g_cvarTopDefenderRate("cs2f_topdefender_rate", FCVAR_NONE, "How often TopDefender stats get updated", 1.0f, true, 0.1f, false, 0.0f);
 CConVar<int> g_cvarTopDefenderThreshold("cs2f_topdefender_threshold", FCVAR_NONE, "Damage threshold for Top Defenders to be shown on round end", 1000, true, 0, false, 0);
 CConVar<int> g_cvarTopDefenderScore("cs2f_topdefender_score", FCVAR_NONE, "Score given to the top defender", 5000, true, 0, false, 0);
-CConVar<CUtlString> g_cvarTopDefenderClanTag("cs2f_topdefender_clantag", FCVAR_NONE, "Clan tag given to the top defender", "[Top Defender]");
+CConVar<CUtlString> g_cvarTopDefenderClanTag("cs2f_topdefender_clantag", FCVAR_NONE, "Clan tag given to the top defender", "Top Defender");
 
 // Array sorting function
 bool SortTD(ZEPlayerHandle a, ZEPlayerHandle b)
@@ -136,7 +135,7 @@ void TD_OnRoundStart(IGameEvent* pEvent)
 			// If player is top defender, we set their score and clan tag
 			if (g_cvarTopDefenderScore.Get() > 0 && pPlayer->GetTopDefenderStatus())
 			{
-				pController->m_iScore() = pController->m_iScore() + g_cvarTopDefenderScore.Get();
+				pController->m_iScore = pController->m_iScore() + g_cvarTopDefenderScore.Get();
 				pController->SetClanTag(g_cvarTopDefenderClanTag.Get().String());
 			}
 		}
@@ -211,8 +210,8 @@ void TD_OnRoundEnd(IGameEvent* pEvent)
 			if (pController)
 			{
 				pPlayer->SetTopDefenderStatus(false);
-				pController->m_iScore() = pController->m_iScore() - g_cvarTopDefenderScore.Get();
-				pController->SetClanTag("");
+				pController->m_iScore = pController->m_iScore() - g_cvarTopDefenderScore.Get();
+				pController->ResetClanTag();
 			}
 		}
 	}
@@ -323,7 +322,7 @@ void TopDefenderSearch(CCSPlayerController* player, const CCommand& args)
 		if (iRank <= 0 || iRank > sortedPlayers.size())
 		{
 			int iNumClients = 0;
-			int pSlots[MAXPLAYERS];
+			int pSlots[MAX_PLAYERS];
 
 			if (!g_playerManager->CanTargetPlayers(player, args[1], iNumClients, pSlots, NO_MULTIPLE))
 				return;

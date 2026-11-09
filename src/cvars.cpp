@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -18,13 +18,13 @@
  */
 
 #include "common.h"
-#include "icvar.h"
+#include "tier0/icvar.h"
 
 #include "tier0/memdbgon.h"
 
 static uint64 g_iFlagsToRemove = (FCVAR_HIDDEN | FCVAR_DEVELOPMENTONLY);
 
-static constexpr const char* pUnCheatCvars[] = {"bot_stop", "bot_freeze", "bot_zombie"};
+static constexpr const char* pUnCheatCvars[] = {"bot_stop", "bot_freeze", "bot_zombie", "mp_flinch_punch_scale"};
 static constexpr const char* pUnCheatCmds[] = {"report_entities", "endround"};
 
 void UnlockConVars()

@@ -1,7 +1,7 @@
 /**
  * =============================================================================
  * CS2Fixes
- * Copyright (C) 2023-2025 Source2ZE
+ * Copyright (C) 2023-2026 Source2ZE
  * =============================================================================
  *
  * This program is free software; you can redistribute it and/or modify it under
@@ -20,8 +20,8 @@
 #pragma once
 
 #include "../playermanager.h"
-#include "../serversideclient.h"
 #include "cbaseplayercontroller.h"
+#include "engine2/serversideclient.h"
 #include "services.h"
 
 class CCSPlayerController : public CBasePlayerController
@@ -84,8 +84,7 @@ public:
 
 	void ChangeTeam(int iTeam)
 	{
-		static int offset = g_GameConfig->GetOffset("CCSPlayerController_ChangeTeam");
-		CALL_VIRTUAL(void, offset, this, iTeam);
+		addresses::ChangeTeam(this, iTeam);
 	}
 
 	void SwitchTeam(int iTeam)
@@ -145,26 +144,28 @@ public:
 
 	void AddScore(int iScore)
 	{
-		m_iScore() = m_iScore() + iScore;
+		m_iScore = m_iScore() + iScore;
 	}
 
 	void SetClanTag(const char* pszClanTag)
 	{
-		// Skip if clan tag is unchanged, since name swap trick has a bit of overhead
-		if (!V_strcmp(m_szClan().String(), pszClanTag))
+		const char* pszCurrentClanTag = m_szClan().String();
+		ZEPlayer* pPlayer = GetZEPlayer();
+
+		if (!V_strcmp(pszCurrentClanTag, pszClanTag) || !pPlayer)
 			return;
 
+		if (!pPlayer->IsOriginalClanTagSaved())
+			pPlayer->SetOriginalClanTag(pszCurrentClanTag);
+
 		m_szClan = g_pEntitySystem->AllocPooledString(pszClanTag);
+	}
 
-		// This name swap trick is necessary to get clients to display the new clan tag
-		std::string strName = GetPlayerName();
+	void ResetClanTag()
+	{
+		ZEPlayer* pPlayer = GetZEPlayer();
 
-		if (!strName.empty() && strName.back() == ' ')
-			strName.pop_back();
-		else
-			strName.push_back(' ');
-
-		V_strncpy(m_iszPlayerName, strName.c_str(), 128);
-		m_iszPlayerName.NetworkStateChanged();
+		if (pPlayer && pPlayer->IsOriginalClanTagSaved())
+			SetClanTag(pPlayer->GetOriginalClanTag().c_str());
 	}
 };
