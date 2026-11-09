@@ -48,6 +48,7 @@
 #include "panoramavote.h"
 #include "patches.h"
 #include "playermanager.h"
+#include "rampbugfix/module.h"
 #include "schemasystem/schemasystem.h"
 #include "tier0/icvar.h"
 #include "user_preferences.h"
@@ -184,6 +185,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 
 	// run our cfg
 	g_pCfgParser->ParseCfg("cs2fixes");
+	rampbugfix::Initialize();
 
 	srand(time(0));
 
@@ -214,6 +216,13 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 
 bool CS2Fixes::Unload(char* error, size_t maxlen)
 {
+	// Remove optional callbacks before releasing managers used by those callbacks.
+	if (!rampbugfix::Shutdown())
+	{
+		snprintf(error, maxlen, "RampBugFix callback removal did not complete; refusing normal unload.");
+		return false;
+	}
+
 	ConVar_Unregister();
 
 	RemoveVirtualHooks();
@@ -385,6 +394,7 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 void CS2Fixes::OnLevelShutdown()
 {
 	Message("OnLevelShutdown()\n");
+	rampbugfix::ResetAll();
 
 	// Only patch BotNavIgnore while a map is loaded, else adding bots will crash
 	g_CommonPatches[1].UndoPatch();

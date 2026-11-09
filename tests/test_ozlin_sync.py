@@ -1,4 +1,4 @@
-"""Source-contract checks for the v2.1 sync, not CS2 runtime/ABI tests."""
+"""Historical source-contract checks for the completed v2.1 sync checkpoint."""
 
 from pathlib import Path
 import re
@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "687f51acb2b717218f6e1e42710f14cfd58a1960"
 FORK = "34aaed13c560204dd4c2131c4c748c032cd28ce5"
 SDK = "30c1a859fe846846081ce0e6125c23e497a9a186"
+CHECKPOINT = "85c2ab558a75c61401dcc0def15fa3245ef34ef1"
 BRIDGE = '''\t\t// parse to external CS# countdown timer plugin
 \t\tV_snprintf(buf, sizeof(buf), "css_countdown_text %d \\"%s\\"", uiTriggerTimerLength, pText + sizeof("Console:"));
 \t\tg_pEngineServer2->ServerCommand(buf);
@@ -26,12 +27,19 @@ def read(path):
     return (ROOT / path).read_text(encoding="utf-8-sig")
 
 
-class SyncContract(unittest.TestCase):
+def checkpoint_read(path):
+    return git("show", CHECKPOINT + ":" + path)
+
+
+class HistoricalSyncCheckpoint(unittest.TestCase):
     def test_public_release_identity(self):
         self.assertEqual(git("rev-parse", "v2.1^{commit}").strip(), BASE)
 
     def test_fork_history_retained(self):
-        subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", FORK, "HEAD"], check=True)
+        subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", FORK, CHECKPOINT], check=True)
+
+    def test_checkpoint_identity(self):
+        self.assertEqual(git("rev-parse", CHECKPOINT + "^{commit}").strip(), CHECKPOINT)
 
     def test_no_unmerged_index(self):
         self.assertEqual(git("ls-files", "--unmerged"), "")
@@ -42,7 +50,8 @@ class SyncContract(unittest.TestCase):
                 self.assertIsNone(re.search(r"^(<<<<<<<|=======|>>>>>>>)", path.read_text(encoding="utf-8-sig"), re.M), str(path))
 
     def test_countdown_bridge_is_exactly_preserved(self):
-        source = read("src/detours.cpp")
+        self.assertEqual(read("src/detours.cpp").count(BRIDGE), 1)
+        source = checkpoint_read("src/detours.cpp")
         self.assertEqual(source.count(BRIDGE), 1)
         without_bridge = source.replace(BRIDGE, "").replace('#include "engine2/ivengineserver2.h"\n', "")
         self.assertEqual(without_bridge, git("show", BASE + ":src/detours.cpp"))
@@ -70,7 +79,7 @@ class SyncContract(unittest.TestCase):
             self.assertRegex(cfg, r"(?m)^" + name + r"\s+0\s")
 
     def test_upstream_files_match_except_bridge(self):
-        paths = git("diff", "--name-only", BASE, "--", "src", "cfg", "gamedata", "AMBuilder", "AMBuildScript", "CS2Fixes.vcxproj", "CS2Fixes.vcxproj.filters", "Dockerfile", ".github").splitlines()
+        paths = git("diff", "--name-only", BASE, CHECKPOINT, "--", "src", "cfg", "gamedata", "AMBuilder", "AMBuildScript", "CS2Fixes.vcxproj", "CS2Fixes.vcxproj.filters", "Dockerfile", ".github").splitlines()
         self.assertEqual(paths, ["src/detours.cpp"])
 
     def test_sdk_pin_and_checkout(self):
@@ -79,7 +88,7 @@ class SyncContract(unittest.TestCase):
         self.assertEqual(actual, SDK)
 
     def test_public_baseline_delta_has_no_whitespace_errors(self):
-        subprocess.run(["git", "-C", str(ROOT), "diff", "--check", BASE], check=True)
+        subprocess.run(["git", "-C", str(ROOT), "diff", "--check", BASE, CHECKPOINT], check=True)
 
 
 if __name__ == "__main__":

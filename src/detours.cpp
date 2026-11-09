@@ -50,6 +50,7 @@
 #include "map_votes.h"
 #include "mapmigrations.h"
 #include "playermanager.h"
+#include "rampbugfix/module.h"
 #include "tier0/splitstring.h"
 #include "tier0/vprof.h"
 #include "votemanager.h"
@@ -575,9 +576,12 @@ float g_flStoreFrametime = 0.0f;
 
 KHook::Return<void> Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pMove)
 {
+	rampbugfix::EnterMovement(pThis, pMove);
+	if (!pThis)
+		return {KHook::Action::Ignore};
 	CCSPlayerPawn* pPawn = pThis->GetPawn();
 
-	if (!pPawn->IsAlive() || !GetGlobals())
+	if (!pPawn || !pPawn->IsAlive() || !GetGlobals())
 		return {KHook::Action::Ignore};
 
 	CCSPlayerController* pController = pPawn->GetOriginalController();
@@ -593,18 +597,23 @@ KHook::Return<void> Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, vo
 	float flSpeedMod = pController->GetZEPlayer()->GetSpeedMod();
 
 	if (flSpeedMod == 1.f)
+	{
+		rampbugfix::PrepareMovement(pThis, pMove);
 		return {KHook::Action::Ignore};
+	}
 
 	// Yes, this is what source1 does to scale player speed
 	// Scale frametime during the entire movement processing step and revert right after
 	g_flStoreFrametime = GetGlobals()->frametime;
 	GetGlobals()->frametime *= flSpeedMod;
+	rampbugfix::PrepareMovement(pThis, pMove);
 
 	return {KHook::Action::Ignore};
 }
 
 KHook::Return<void> Detour_ProcessMovement_Post(CCSPlayer_MovementServices* pThis, void* pMove)
 {
+	rampbugfix::LeaveMovement(pThis, pMove);
 	if (g_flStoreFrametime != 0.0f)
 	{
 		GetGlobals()->frametime = g_flStoreFrametime;

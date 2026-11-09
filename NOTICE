@@ -1,5 +1,14 @@
 List of 3rd party code used in this project and their licenses.
 
+# Legacy RampBugFix adaptation
+
+The optional RampBugFix core is adapted from Interesting-exe/CS2Fixes-RampbugFix
+at commit dc9ad2ec896bf0818ffe01e839dba20ce4891fe5. That source is licensed under
+GNU GPL version 3. Its README credits the original ramp-fix approach to zer0.
+This repository's adaptation remains covered by GNU GPL version 3. It does not
+include the legacy repository's bundled funchook copy and does not implement the
+newer CS2KZ ramp algorithm.
+
 # DynLibUtils
 
 MIT License

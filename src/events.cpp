@@ -31,6 +31,7 @@
 #include "map_votes.h"
 #include "mapmigrations.h"
 #include "panoramavote.h"
+#include "rampbugfix/module.h"
 #include "topdefender.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
@@ -65,6 +66,7 @@ void UnregisterEventListeners()
 
 GAME_EVENT_F(round_prestart)
 {
+	rampbugfix::ResetAll();
 	RemoveTimers(TIMERFLAG_ROUND);
 
 	EntityHandler_OnRoundRestart();
@@ -102,6 +104,7 @@ GAME_EVENT_F(player_spawn)
 
 	if (!pController)
 		return;
+	rampbugfix::ResetPlayer(pController->GetPlayerSlot());
 
 	ZEPlayer* pPlayer = pController->GetZEPlayer();
 
@@ -166,6 +169,9 @@ GAME_EVENT_F(player_hurt)
 
 GAME_EVENT_F(player_death)
 {
+	auto* pController = static_cast<CCSPlayerController*>(pEvent->GetPlayerController("userid"));
+	if (pController)
+		rampbugfix::ResetPlayer(pController->GetPlayerSlot());
 	if (g_cvarEnableZR.Get())
 		ZR_OnPlayerDeath(pEvent);
 

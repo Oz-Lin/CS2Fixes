@@ -50,6 +50,7 @@
 #include "networkstringtabledefs.h"
 #include "panoramavote.h"
 #include "playermanager.h"
+#include "rampbugfix/module.h"
 #include "tier0/icvar.h"
 #include "tier0/vprof.h"
 #include "usermessages.pb.h"
@@ -170,6 +171,7 @@ void RemoveVirtualHooks()
 
 KHook::Return<void> Hook_GameFrame_Post(IServerGameDLL* pThis, bool simulating, bool bFirstTick, bool bLastTick)
 {
+	rampbugfix::OnFrame();
 	/**
 	 * simulating:
 	 * ***********
@@ -235,6 +237,7 @@ KHook::Return<void> Hook_ClientActive_Post(IServerGameClients* pThis, CPlayerSlo
 
 KHook::Return<void> Hook_ClientDisconnect_Post(IServerGameClients* pThis, CPlayerSlot slot, ENetworkDisconnectionReason reason, const char* pszName, uint64 xuid, const char* pszNetworkID)
 {
+	rampbugfix::ResetPlayer(slot.Get());
 	Message("Hook_ClientDisconnect(%d, %d, \"%s\", %lli)\n", slot, reason, pszName, xuid);
 
 	CCSPlayerController* player = CCSPlayerController::FromSlot(slot);
@@ -509,6 +512,7 @@ CConVar<CUtlString> g_cvarMotdUrl("cs2f_motd_url", FCVAR_NONE, "Server MOTD URL,
 
 KHook::Return<void> Hook_StartupServer_Post(INetworkServerService* pThis, const GameSessionConfiguration_t& config, ISource2WorldSession* pSession, const char* pszMapName)
 {
+	rampbugfix::ResetAll();
 	g_pEntitySystem = GameEntitySystem();
 	g_pEntitySystem->AddListenerEntity(g_pEntityListener);
 
