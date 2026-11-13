@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "687f51acb2b717218f6e1e42710f14cfd58a1960"
 FORK = "34aaed13c560204dd4c2131c4c748c032cd28ce5"
-SDK = "30c1a859fe846846081ce0e6125c23e497a9a186"
+SDK = "2283c1f919cb7b75329eb059ef6b064b36c2fdaa"
 CHECKPOINT = "85c2ab558a75c61401dcc0def15fa3245ef34ef1"
 BRIDGE = '''\t\t// parse to external CS# countdown timer plugin
 \t\tV_snprintf(buf, sizeof(buf), "css_countdown_text %d \\"%s\\"", uiTriggerTimerLength, pText + sizeof("Console:"));
@@ -50,14 +50,14 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
                 self.assertIsNone(re.search(r"^(<<<<<<<|=======|>>>>>>>)", path.read_text(encoding="utf-8-sig"), re.M), str(path))
 
     def test_countdown_bridge_is_exactly_preserved(self):
-        self.assertEqual(read("src/detours.cpp").count(BRIDGE), 1)
+        self.assertEqual(read("src/virtual_hooks.cpp").count(BRIDGE), 1)
         source = checkpoint_read("src/detours.cpp")
         self.assertEqual(source.count(BRIDGE), 1)
         without_bridge = source.replace(BRIDGE, "").replace('#include "engine2/ivengineserver2.h"\n', "")
         self.assertEqual(without_bridge, git("show", BASE + ":src/detours.cpp"))
 
     def test_bridge_still_uses_existing_timer_gate(self):
-        source = read("src/detours.cpp")
+        source = read("src/virtual_hooks.cpp")
         self.assertLess(source.index("if ((uiTriggerTimerLength > 4)"), source.index("css_countdown_text"))
         self.assertIn("g_cvarEnableTriggerTimer.Get() && GetGlobals() && g_pGameRules", source)
 
@@ -86,6 +86,21 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
         self.assertIn(SDK, git("ls-files", "--stage", "sdk"))
         actual = subprocess.check_output(["git", "-C", str(ROOT / "sdk"), "rev-parse", "HEAD"], text=True).strip()
         self.assertEqual(actual, SDK)
+
+    def test_current_message_abi_and_bridge_location(self):
+        source = read("src/virtual_hooks.cpp")
+        self.assertIn("NetMessageInfo_t* pEvent", source)
+        self.assertNotIn("GetNetMessageInfo()", source)
+        self.assertNotIn("INetworkMessageInternal", source)
+        self.assertIn('msg->playerindex() != -1', source)
+        self.assertNotIn("css_countdown_text", read("src/detours.cpp"))
+        self.assertNotIn("Detour_UTIL_SayTextFilter", read("src/detours.cpp"))
+
+    def test_ramp_integration_preserved(self):
+        for path in ["src/rampbugfix/core.cpp", "src/rampbugfix/module.cpp", "src/rampbugfix/module.h"]:
+            self.assertEqual(read(path), git("show", "561f8b7:" + path))
+        self.assertIn("rampbugfix::ResetAll();", read("src/virtual_hooks.cpp"))
+        self.assertIn("rampbugfix::", read("src/detours.cpp"))
 
     def test_public_baseline_delta_has_no_whitespace_errors(self):
         subprocess.run(["git", "-C", str(ROOT), "diff", "--check", BASE, CHECKPOINT], check=True)

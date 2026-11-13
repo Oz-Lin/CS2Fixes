@@ -50,16 +50,14 @@
 #include "map_votes.h"
 #include "mapmigrations.h"
 #include "playermanager.h"
+#include "pushentity.h"
 #include "rampbugfix/module.h"
-#include "tier0/splitstring.h"
 #include "tier0/vprof.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
 
 #include "tier0/memdbgon.h"
 
-KHOOK_FUNCTION(UTIL_SayTextFilter, Detour_UTIL_SayTextFilter, nullptr);
-KHOOK_FUNCTION(UTIL_SayText2Filter, Detour_UTIL_SayText2Filter, nullptr);
 KHOOK_MEMBER(TriggerPush_Touch, Detour_TriggerPush_Touch, nullptr);
 KHOOK_MEMBER(CBaseEntity_TakeDamageOld, Detour_CBaseEntity_TakeDamageOld, Detour_CBaseEntity_TakeDamageOld_Post);
 KHOOK_MEMBER(CCSPlayer_WeaponServices_CanUse, Detour_CCSPlayer_WeaponServices_CanUse, nullptr);
@@ -89,6 +87,10 @@ KHOOK_MEMBER(CCSGameRules_GoToIntermission, Detour_CCSGameRules_GoToIntermission
 KHOOK_MEMBER(SetBeamOrigin, Detour_SetBeamOrigin, nullptr);
 KHOOK_MEMBER(SetBeamEndPos, Detour_SetBeamEndPos, nullptr);
 KHOOK_MEMBER(CWorldRendererMgr_CreateWorld_Internal, nullptr, Detour_CWorldRendererMgr_CreateWorld_Internal_Post);
+KHOOK_MEMBER(CGameEntitySystem_CreateEntities, Detour_CGameEntitySystem_CreateEntities, nullptr);
+KHOOK_MEMBER(UnlinkPusherList, Detour_UnlinkPusherList, nullptr);
+KHOOK_MEMBER(RelinkPusherList, Detour_RelinkPusherList, nullptr);
+KHOOK_MEMBER(SpeculativelyCheckPush, Detour_SpeculativelyCheckPush, nullptr);
 
 std::vector<CKHookBase*>& GetKHookList()
 {
@@ -261,149 +263,6 @@ KHook::Return<void> Detour_TriggerPush_Touch(CTriggerPush* pPush, CBaseEntity* p
 	return {KHook::Action::Supersede};
 }
 
-KHook::Return<void> SayChatMessageWithTimer(IRecipientFilter& filter, const char* pText, CCSPlayerController* pPlayer, uint64 eMessageType)
-{
-	VPROF("SayChatMessageWithTimer");
-
-	char buf[256];
-
-	// Filter console message - remove non-alphanumeric chars and convert to lowercase
-	uint32 uiTextLength = strlen(pText);
-	uint32 uiFilteredTextLength = 0;
-	char filteredText[256];
-
-	for (uint32 i = 0; i < uiTextLength; i++)
-	{
-		if (pText[i] >= 'A' && pText[i] <= 'Z')
-			filteredText[uiFilteredTextLength++] = pText[i] + 32;
-		if (pText[i] == ' ' || (pText[i] >= '0' && pText[i] <= '9') || (pText[i] >= 'a' && pText[i] <= 'z'))
-			filteredText[uiFilteredTextLength++] = pText[i];
-	}
-	filteredText[uiFilteredTextLength] = '\0';
-
-	// Split console message into words seperated by the space character
-	CSplitString words(filteredText, " ");
-
-	// Word count includes the first word "Console:" at index 0, first relevant word is at index 1
-	int iWordCount = words.Count();
-	uint32 uiTriggerTimerLength = 0;
-
-	if (iWordCount == 2)
-		uiTriggerTimerLength = V_StringToUint32(words.Element(1), 0, NULL, NULL, PARSING_FLAG_SKIP_WARNING);
-
-	for (int i = 1; i < iWordCount && uiTriggerTimerLength == 0; i++)
-	{
-		uint32 uiCurrentValue = V_StringToUint32(words.Element(i), 0, NULL, NULL, PARSING_FLAG_SKIP_WARNING);
-		uint32 uiNextWordLength = 0;
-		char* pNextWord = NULL;
-
-		if (i + 1 < iWordCount)
-		{
-			pNextWord = words.Element(i + 1);
-			uiNextWordLength = strlen(pNextWord);
-		}
-
-		// Case: ... X sec(onds) ... or ... X s ... or ... X min(utes) ...
-		if (pNextWord != NULL && uiCurrentValue > 0)
-		{
-			if (uiNextWordLength == 1)
-			{
-				if (pNextWord[0] == 's')
-					uiTriggerTimerLength = uiCurrentValue;
-			}
-			else if (uiNextWordLength > 2)
-			{
-				if (pNextWord[0] == 's' && pNextWord[1] == 'e' && pNextWord[2] == 'c')
-					uiTriggerTimerLength = uiCurrentValue;
-				if (pNextWord[0] == 'm' && pNextWord[1] == 'i' && pNextWord[2] == 'n')
-					uiTriggerTimerLength = uiCurrentValue * 60;
-			}
-		}
-
-		// Case: ... Xs - only support up to 3 digit numbers (in seconds) for this timer parse method
-		if (uiCurrentValue == 0)
-		{
-			char* pCurrentWord = words.Element(i);
-			uint32 uiCurrentScanLength = MIN(strlen(pCurrentWord), 4);
-
-			for (uint32 j = 0; j < uiCurrentScanLength; j++)
-			{
-				if (pCurrentWord[j] >= '0' && pCurrentWord[j] <= '9')
-					continue;
-
-				if (pCurrentWord[j] == 's')
-				{
-					pCurrentWord[j] = '\0';
-					uiTriggerTimerLength = V_StringToUint32(pCurrentWord, 0, NULL, NULL, PARSING_FLAG_SKIP_WARNING);
-				}
-				break;
-			}
-		}
-	}
-
-	float fCurrentRoundClock = g_pGameRules->m_iRoundTime - (GetGlobals()->curtime - g_pGameRules->m_fRoundStartTime.Get().GetTime());
-
-	// Only display trigger time if the timer is greater than 4 seconds, and time expires within the round
-	if ((uiTriggerTimerLength > 4) && (fCurrentRoundClock > uiTriggerTimerLength))
-	{
-		int iTriggerTime = fCurrentRoundClock - uiTriggerTimerLength;
-
-		// Round timer to nearest whole second
-		if ((int)(fCurrentRoundClock - 0.5f) == (int)fCurrentRoundClock)
-			iTriggerTime++;
-
-		int mins = iTriggerTime / 60;
-		int secs = iTriggerTime % 60;
-
-		// parse to external CS# countdown timer plugin
-		V_snprintf(buf, sizeof(buf), "css_countdown_text %d \"%s\"", uiTriggerTimerLength, pText + sizeof("Console:"));
-		g_pEngineServer2->ServerCommand(buf);
-
-		// now back to the Red Console + Green Say Text
-		V_snprintf(buf, sizeof(buf), "%s %s %s %2d:%02d", " \7CONSOLE:\4", pText + sizeof("Console:"), "\x10- @", mins, secs);
-	}
-	else
-		V_snprintf(buf, sizeof(buf), "%s %s", " \7CONSOLE:\4", pText + sizeof("Console:"));
-
-	return KHook::Recall<void (*)(IRecipientFilter&, const char*, CCSPlayerController*, uint64)>(nullptr, {KHook::Action::Ignore}, filter, buf, pPlayer, eMessageType);
-}
-
-CConVar<bool> g_cvarEnableTriggerTimer("cs2f_trigger_timer_enable", FCVAR_NONE, "Whether to process countdown messages said by Console (e.g. Hold for 10 seconds) and append the round time where the countdown resolves", false);
-
-KHook::Return<void> Detour_UTIL_SayTextFilter(IRecipientFilter& filter, const char* pText, CCSPlayerController* pPlayer, int eMessageType)
-{
-	if (pPlayer)
-		return {KHook::Action::Ignore};
-
-	if (g_cvarEnableTriggerTimer.Get() && GetGlobals() && g_pGameRules)
-		return SayChatMessageWithTimer(filter, pText, pPlayer, eMessageType);
-
-	char buf[256];
-	V_snprintf(buf, sizeof(buf), "%s %s", " \7CONSOLE:\4", pText + sizeof("Console:"));
-
-	return KHook::Recall<void (*)(IRecipientFilter&, const char*, CCSPlayerController*, uint64)>(nullptr, {KHook::Action::Ignore}, filter, buf, pPlayer, eMessageType);
-}
-
-KHook::Return<void> Detour_UTIL_SayText2Filter(
-	IRecipientFilter& filter,
-	CCSPlayerController* pEntity,
-	int eMessageType,
-	const char* msg_name,
-	const char* param1,
-	const char* param2,
-	const char* param3,
-	const char* param4)
-{
-#ifdef _DEBUG
-	CPlayerSlot slot = filter.GetRecipientIndex(0);
-	CCSPlayerController* target = CCSPlayerController::FromSlot(slot);
-
-	if (target)
-		Message("Chat from %s to %s: %s\n", param1, target->GetPlayerName(), param2);
-#endif
-
-	return KHook::Recall<void (*)(IRecipientFilter&, CCSPlayerController*, uint64, const char*, const char*, const char*, const char*, const char*)>(nullptr, {KHook::Action::Ignore}, filter, pEntity, eMessageType, msg_name, param1, param2, param3, param4);
-}
 
 KHook::Return<bool> Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pPlayerWeapon)
 {
@@ -952,4 +811,85 @@ KHook::Return<CSingleWorldRep*> Detour_CWorldRendererMgr_CreateWorld_Internal_Po
 	}
 
 	return {KHook::Action::Ignore};
+}
+
+std::set<SpawnGroupHandle_t> g_setUnloadingSpawnGroups;
+
+KHook::Return<ILoadingSpawnGroup*> Detour_CGameEntitySystem_CreateEntities(CGameEntitySystem* pThis, SpawnGroupHandle_t hSpawnGroup, const CUtlVector<const CEntityKeyValues*>* pKeyValues, const matrix3x4a_t* pSpawnOffset, const char* pszFilter, CreateSpawnGroupType_t createType, const void* pNameFixup, CUtlVector<CEntityHandle>* pOutEntities, bool bUnk)
+{
+	if (!pszFilter || V_strcmp(pszFilter, "cs_respawn") || !g_setUnloadingSpawnGroups.contains(hSpawnGroup))
+		return {KHook::Action::Ignore};
+
+	// CCSGameRules::CleanUpMap respawns the default entity lump of every spawngroup that hasn't finished unloading, so don't spawn into ones pending unload
+	return {KHook::Action::Supersede, nullptr};
+}
+
+// For every entity a mover pushes, the game toggles the collision of the mover and all its children off and back on around the push trace, which is very expensive with many riders. Instead, leave the pushers solid and filter them out of the traces.
+CConVar<bool> g_cvarFixPusherSolidToggle("cs2f_fix_pusher_solid_toggle", FCVAR_NONE, "Whether to filter movers out of push traces, fixes lag with many players on moving entities", false);
+
+CPhysicsPushedEntities* g_pCurrentPushedEntities = nullptr;
+int g_iCurrentPusherCount = 0;
+int g_iSpeculativePushDepth = 0;
+
+bool IsNonSolidPusher(CEntityInstance* pEntity, bool bPushFinalTrace)
+{
+	// SpeculativelyCheckPush only traces with PushFinal after relinking, where the pushers must be solid
+	if (!g_pCurrentPushedEntities || (bPushFinalTrace && g_iSpeculativePushDepth > 0))
+		return false;
+
+	// Base() as the count is 0 inside SpeculativelyCheckPush
+	for (int i = 0; i < g_iCurrentPusherCount; i++)
+		if (g_pCurrentPushedEntities->m_rgPusher.Base()[i].m_pEntity == pEntity)
+			return true;
+
+	return false;
+}
+
+KHook::Return<void> Detour_UnlinkPusherList(CPhysicsPushedEntities* pThis)
+{
+	// SpeculativelyCheckPush calls this on Linux, it's handled there instead
+	if (g_iSpeculativePushDepth > 0 || !g_cvarFixPusherSolidToggle.Get())
+		return {KHook::Action::Ignore};
+
+	// Makes RelinkPusherList a no-op
+	for (auto& pusher : pThis->m_rgPusher)
+		pusher.m_bCollisionCleared = false;
+
+	g_pCurrentPushedEntities = pThis;
+	g_iCurrentPusherCount = pThis->m_rgPusher.Count();
+	return {KHook::Action::Supersede};
+}
+
+KHook::Return<void> Detour_RelinkPusherList(CPhysicsPushedEntities* pThis)
+{
+	if (g_iSpeculativePushDepth == 0 && g_pCurrentPushedEntities == pThis)
+		g_pCurrentPushedEntities = nullptr;
+
+	return {KHook::Action::Ignore};
+}
+
+// MSVC inlines UnlinkPusherList here, so empty m_rgPusher instead, which also skips the inlined relink loop.
+KHook::Return<bool> Detour_SpeculativelyCheckPush(CPhysicsPushedEntities* pThis, void* pPushedInfo, const Vector* pVecAbsPush, bool bRotationalPush, int64_t unk5)
+{
+	if (!g_cvarFixPusherSolidToggle.Get())
+		return {KHook::Action::Ignore};
+
+	auto pPrevPushedEntities = g_pCurrentPushedEntities;
+	int iPrevCount = g_iCurrentPusherCount;
+	int iCount = pThis->m_rgPusher.Count();
+	auto pPushers = static_cast<CUtlVectorAccessor<PhysicsPusherInfo_t>*>(&pThis->m_rgPusher);
+
+	g_pCurrentPushedEntities = pThis;
+	g_iCurrentPusherCount = iCount;
+	pPushers->SetCountUnsafe(0);
+	g_iSpeculativePushDepth++;
+
+	bool bResult = hookSpeculativelyCheckPush->CallOriginal(pThis, pPushedInfo, pVecAbsPush, bRotationalPush, unk5);
+
+	g_iSpeculativePushDepth--;
+	pPushers->SetCountUnsafe(iCount);
+	g_pCurrentPushedEntities = pPrevPushedEntities;
+	g_iCurrentPusherCount = iPrevCount;
+
+	return {KHook::Action::Supersede, bResult};
 }

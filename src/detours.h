@@ -19,9 +19,11 @@
 
 #pragma once
 #include "cs2_sdk/entityio.h"
+#include "engine2/isource2engine.h"
 #include "khook.hpp"
 #include "map.h"
-#include <tier0/utlsymboltablelarge.h>
+
+#include <set>
 
 class CCheckTransmitInfo;
 class IRecipientFilter;
@@ -39,7 +41,7 @@ class CCSPlayer_WeaponServices;
 class CCSPlayer_MovementServices;
 class CCSPlayer_ItemServices;
 class CBasePlayerWeapon;
-class INetworkMessageInternal;
+struct NetMessageInfo_t;
 class IEngineServiceMgr;
 class CServerSideClient;
 class INetChannel;
@@ -48,16 +50,20 @@ class CUserCmd;
 class CCSPlayerPawn;
 class CCSPlayer_UseServices;
 class CTraceFilter;
+class CPhysicsPushedEntities;
 class CNavMesh;
 class CBaseModelEntity;
 class Vector;
 class QAngle;
 class CEconItemView;
 class CCSGameRules;
+class CGameEntitySystem;
 class CBeam;
 class IWorldRendererMgr;
 struct CPulseArgumentPack;
 struct CTakeDamageResult;
+
+extern std::set<SpawnGroupHandle_t> g_setUnloadingSpawnGroups;
 
 enum class AcquireMethod
 {
@@ -83,8 +89,6 @@ enum class AcquireResult
 KHook::Return<int64> Detour_CBaseEntity_TakeDamageOld(CBaseEntity* pThis, CTakeDamageInfo* pInfo, CTakeDamageResult* pResult);
 KHook::Return<int64> Detour_CBaseEntity_TakeDamageOld_Post(CBaseEntity* pThis, CTakeDamageInfo* pInfo, CTakeDamageResult* pResult);
 KHook::Return<void> Detour_TriggerPush_Touch(CTriggerPush* pPush, CBaseEntity* pOther);
-KHook::Return<void> Detour_UTIL_SayTextFilter(IRecipientFilter&, const char*, CCSPlayerController*, int);
-KHook::Return<void> Detour_UTIL_SayText2Filter(IRecipientFilter&, CCSPlayerController*, int, const char*, const char*, const char*, const char*, const char*);
 KHook::Return<bool> Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices*, CBasePlayerWeapon*);
 KHook::Return<void> Detour_CCSPlayer_WeaponServices_EquipWeapon(CCSPlayer_WeaponServices*, CBasePlayerWeapon*);
 KHook::Return<bool> Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value, CPulseArgumentPack* pArgumentPack, CPulseInputParamMap* pParamMap);
@@ -117,3 +121,9 @@ KHook::Return<void> Detour_CCSGameRules_GoToIntermission(CCSGameRules* pThis, bo
 KHook::Return<void> Detour_SetBeamOrigin(CBeam* pThis, const Vector* pVecWorldPosition);
 KHook::Return<void> Detour_SetBeamEndPos(CBeam* pThis, const Vector* pVecWorldPosition);
 KHook::Return<CSingleWorldRep*> Detour_CWorldRendererMgr_CreateWorld_Internal_Post(IWorldRendererMgr* pThis, CSingleWorldRep* pSingleWorld);
+KHook::Return<ILoadingSpawnGroup*> Detour_CGameEntitySystem_CreateEntities(CGameEntitySystem* pThis, SpawnGroupHandle_t hSpawnGroup, const CUtlVector<const CEntityKeyValues*>* pKeyValues, const matrix3x4a_t* pSpawnOffset, const char* pszFilter, CreateSpawnGroupType_t createType, const void* pNameFixup, CUtlVector<CEntityHandle>* pOutEntities, bool bUnk);
+KHook::Return<void> Detour_UnlinkPusherList(CPhysicsPushedEntities* pThis);
+KHook::Return<void> Detour_RelinkPusherList(CPhysicsPushedEntities* pThis);
+KHook::Return<bool> Detour_SpeculativelyCheckPush(CPhysicsPushedEntities* pThis, void* pPushedInfo, const Vector* pVecAbsPush, bool bRotationalPush, int64_t unk5);
+
+bool IsNonSolidPusher(CEntityInstance* pEntity, bool bPushFinalTrace);
