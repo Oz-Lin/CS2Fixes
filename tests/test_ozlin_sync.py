@@ -97,8 +97,12 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
         self.assertNotIn("Detour_UTIL_SayTextFilter", read("src/detours.cpp"))
 
     def test_ramp_integration_preserved(self):
-        for path in ["src/rampbugfix/core.cpp", "src/rampbugfix/module.cpp", "src/rampbugfix/module.h"]:
+        for path in ["src/rampbugfix/core.cpp", "src/rampbugfix/module.h"]:
             self.assertEqual(read(path), git("show", "561f8b7:" + path))
+        module = read("src/rampbugfix/module.cpp")
+        self.assertIn("0xde50ca3604b5443f", module)
+        self.assertIn("0x96c2563722232d09", module)
+        self.assertIn("size == profile.fileSize && hash == profile.fileHash", module)
         self.assertIn("rampbugfix::ResetAll();", read("src/virtual_hooks.cpp"))
         self.assertIn("rampbugfix::", read("src/detours.cpp"))
 

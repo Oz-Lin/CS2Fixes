@@ -39,7 +39,7 @@ struct Profile
 // Hashes identify an audited build, not a security boundary. Never broaden a
 // profile on the strength of a matching signature alone.
 #ifdef _WIN32
-constexpr Profile kProfile{
+constexpr Profile kProfiles[]{ {
     34672792, UINT64_C(0x64e05e7cdc591254),
     "48 8B C4 4C 89 48 ?? 4C 89 40 ?? 48 89 50 ?? 48 89 48 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 0F 29 70",
     "40 55 56 57 41 54 41 55 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B F9",
@@ -48,21 +48,29 @@ constexpr Profile kProfile{
     "40 53 48 83 EC 20 48 83 79 38 00 48 8B D9 75 05 E8 ?? ?? ?? ?? 48 8B 4B 38 E8 ?? ?? ?? ?? 84 C0 74 0F E8 ?? ?? ?? ?? 48 83 C0 48",
     "40 53 48 83 EC 20 48 83 79 38 00 48 8B D9 75 05 E8 ?? ?? ?? ?? 48 8B 4B 38 E8 ?? ?? ?? ?? 84 C0 74 0F E8 ?? ?? ?? ?? 48 83 C0 54",
     "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 83 79 38 00 48 8B F9 75 05 E8 ?? ?? ?? ?? 48 8B 4F 38 48 8D 77 38 48 85 C9 74 16 48 8B 01 FF 90 20 0C 00 00"
-};
+} };
 #else
-// The saved Linux audit proves these six functions and the layouts below. It
-// does not contain a unique CategorizePosition target, so this incomplete
-// profile deliberately fails closed before scanning or hook registration.
-constexpr Profile kProfile{
+// Static audits of the exact Linux binaries prove all seven targets and the
+// layouts below. Identity and unique-signature checks still fail closed.
+constexpr Profile kProfiles[]{ {
     41807736, UINT64_C(0xde50ca3604b5443f),
     "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 57 41 56 49 89 F6",
-    nullptr,
+    "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 41 89 D5",
     "55 48 89 E5 41 57 49 89 FF 41 56 49 89 D6 41 55 41 54 49 89 F4 53 48 89 CB 48 81 EC ?? ?? ?? ??",
     "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 55 41 54 49 89 F4 53 48 89 FB 48 83 EC ?? 48 89 47 30 B8 00 49 00 00 66 89 47 38 48 8D 05 ?? ?? ?? ??",
     "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 4B E8 ?? ?? ?? ?? 84 C0 75 32 80 BB 08 04 00 00 00 75 19 E8 ?? ?? ?? ?? 48 8B 5D F8 C9 48 83 C0 0C C3",
     "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 4B E8 ?? ?? ?? ?? 84 C0 75 32 80 BB 08 04 00 00 00 75 19 E8 ?? ?? ?? ?? 48 8B 5D F8 C9 48 83 C0 18 C3",
     "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 43 48 8B 07 48 8D 15 ?? ?? ?? ?? 48 8B 80 28 0C 00 00 48 39 D0 75 55"
-};
+}, {
+    41850680, UINT64_C(0x96c2563722232d09),
+    "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 57 41 56 49 89 F6",
+    "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 57 41 56 41 55 41 89 D5",
+    "55 48 89 E5 41 57 49 89 FF 41 56 49 89 D6 41 55 41 54 49 89 F4 53 48 89 CB 48 81 EC ?? ?? ?? ??",
+    "48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 55 66 0F EF C0 48 89 E5 41 55 41 54 49 89 F4 53 48 89 FB 48 83 EC ?? 48 89 47 30 B8 00 49 00 00 66 89 47 38 48 8D 05 ?? ?? ?? ??",
+    "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 4B E8 ?? ?? ?? ?? 84 C0 75 32 80 BB 08 04 00 00 00 75 19 E8 ?? ?? ?? ?? 48 8B 5D F8 C9 48 83 C0 0C C3",
+    "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 4B E8 ?? ?? ?? ?? 84 C0 75 32 80 BB 08 04 00 00 00 75 19 E8 ?? ?? ?? ?? 48 8B 5D F8 C9 48 83 C0 18 C3",
+    "55 48 89 E5 53 48 89 FB 48 83 EC 08 48 8B 7F 38 48 85 FF 74 43 48 8B 07 48 8D 15 ?? ?? ?? ?? 48 8B 80 28 0C 00 00 48 39 D0 75 55"
+} };
 #endif
 
 static_assert(sizeof(Vector) == 12 && sizeof(Vec3) == 12);
@@ -393,14 +401,12 @@ void* FindUnique(const char* signature)
     return found;
 }
 
-bool MatchBinary()
+const Profile* MatchBinary()
 {
-    if (!kProfile.fileSize || !kProfile.movementMask)
-        return false;
     char path[MAX_PATH];
     V_snprintf(path, sizeof(path), "%s%s%sserver%s", Plat_GetGameDirectory(), GAMEBIN, MODULE_PREFIX, MODULE_EXT);
     FILE* file = std::fopen(path, "rb");
-    if (!file) return false;
+    if (!file) return nullptr;
     std::uint64_t size = 0;
     std::uint64_t hash = UINT64_C(14695981039346656037);
     std::array<unsigned char, 65536> buffer;
@@ -414,9 +420,15 @@ bool MatchBinary()
             hash *= UINT64_C(1099511628211);
         }
     }
-    const bool ok = !std::ferror(file) && size == kProfile.fileSize && hash == kProfile.fileHash;
+    const bool readOk = !std::ferror(file);
     std::fclose(file);
-    return ok;
+    if (!readOk) return nullptr;
+    for (const auto& profile : kProfiles)
+    {
+        if (profile.fileSize && profile.movementMask && size == profile.fileSize && hash == profile.fileHash)
+            return &profile;
+    }
+    return nullptr;
 }
 } // namespace
 
@@ -447,23 +459,24 @@ void Initialize()
         Message("RampBugFix disabled (default); no optional hooks registered.\n");
         return;
     }
-    if (!kProfile.categorizePosition)
-    {
-        Message("RampBugFix disabled: audited profile lacks a unique CategorizePosition target. CS2Fixes continues.\n");
-        return;
-    }
-    if (!MatchBinary())
+    const Profile* profile = MatchBinary();
+    if (!profile)
     {
         Message("RampBugFix disabled: server binary has no complete audited ABI profile. CS2Fixes continues.\n");
         return;
     }
-    void* tryAddress = FindUnique(kProfile.tryPlayerMove);
-    void* categorizeAddress = FindUnique(kProfile.categorizePosition);
-    s_traceBounds = reinterpret_cast<TraceBoundsFn>(FindUnique(kProfile.traceBounds));
-    s_initFilter = reinterpret_cast<InitFilterFn>(FindUnique(kProfile.initFilter));
-    s_hullMins = reinterpret_cast<HullFn>(FindUnique(kProfile.hullMins));
-    s_hullMaxs = reinterpret_cast<HullFn>(FindUnique(kProfile.hullMaxs));
-    s_movementMask = reinterpret_cast<MaskFn>(FindUnique(kProfile.movementMask));
+    if (!profile->categorizePosition)
+    {
+        Message("RampBugFix disabled: audited profile lacks a unique CategorizePosition target. CS2Fixes continues.\n");
+        return;
+    }
+    void* tryAddress = FindUnique(profile->tryPlayerMove);
+    void* categorizeAddress = FindUnique(profile->categorizePosition);
+    s_traceBounds = reinterpret_cast<TraceBoundsFn>(FindUnique(profile->traceBounds));
+    s_initFilter = reinterpret_cast<InitFilterFn>(FindUnique(profile->initFilter));
+    s_hullMins = reinterpret_cast<HullFn>(FindUnique(profile->hullMins));
+    s_hullMaxs = reinterpret_cast<HullFn>(FindUnique(profile->hullMaxs));
+    s_movementMask = reinterpret_cast<MaskFn>(FindUnique(profile->movementMask));
     if (!tryAddress || !categorizeAddress || !s_traceBounds || !s_initFilter || !s_hullMins || !s_hullMaxs || !s_movementMask)
     {
         Message("RampBugFix disabled: missing, ambiguous or already patched target; no hooks registered.\n");

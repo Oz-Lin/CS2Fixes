@@ -12,11 +12,26 @@ is `64e05e7cdc591254`. The adapter requires every target signature to match once
 
 The audited Linux binary is server version 2000940, patch 1.41.9.5, dated
 2026-11-02. Its `libserver.so` size is 41807736 bytes and its FNV-1a 64 hash is
-`de50ca3604b5443f`. Six required movement and trace functions and the 64-byte
-movement-filter layout were verified. The saved audit has no unique
-`CategorizePosition` target. Linux therefore fails closed before scanning or
-registering optional hooks. The missing target cannot be inferred from public
-gamedata or another build.
+`de50ca3604b5443f`. Its SHA-256 is
+`503c5b0e3c7dc0c1c66f32d51437da6896cf7eb3a7dd299db9c01f89199b59f5` and its
+ELF Build ID is `b9eac3d151886d4fc820d2e1d1f1d8642daa54c9`. All seven required movement and
+trace targets and the 64-byte movement-filter layout were statically verified
+on instance 28056. `CategorizePosition` has one `.text` match at ELF VA
+`0x15BAE40`; its direct call at `0x15E9A02` confirms the expected ABI.
+
+A second exact Linux profile covers Valve build 26445667 from depot 2347773,
+manifest 8513165868182791792. Its `libserver.so` is 41850680 bytes, has FNV-1a
+64 hash `96c2563722232d09`, SHA-256
+`ee0cc32a4b83c4a11bdd6bc32c5347000165ee236b5c6ff0b1901f49827405e3`, and ELF
+Build ID `5ea0e482b46eb71c4f9615c48b34ddc36f55ca40`. All seven signatures match once.
+`CategorizePosition` is at ELF VA `0x15C5400`, with a direct call at
+`0x15F40C2`. Static comparison found equivalent ABI-relevant instructions for
+the audited movement, trace, filter, hull and mask paths, including the first
+0x803 bytes of the trace function, the filter constructor and 0x40-byte sized
+deleting destructor, the first 0x9a0 bytes of `TryPlayerMove`, and the first
+0x805 bytes of `CategorizePosition`. This is static-only evidence. The newer
+binary also requires its paired build-specific gamedata override; this adapter
+does not alter tracked gamedata.
 
 These profiles establish static ABI compatibility only. They do not establish
 gameplay correctness, compatibility with later game builds, or compatibility
