@@ -263,7 +263,6 @@ KHook::Return<void> Detour_TriggerPush_Touch(CTriggerPush* pPush, CBaseEntity* p
 	return {KHook::Action::Supersede};
 }
 
-
 KHook::Return<bool> Detour_CCSPlayer_WeaponServices_CanUse(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pPlayerWeapon)
 {
 	if (g_cvarEnableEntWatch.Get() && !EW_Detour_CCSPlayer_WeaponServices_CanUse(pWeaponServices, pPlayerWeapon))

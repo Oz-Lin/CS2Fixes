@@ -26,6 +26,7 @@
 #include "engine2/ivengineserver2.h"
 #include "engine2/serversideclient.h"
 #include "entity/ccsplayercontroller.h"
+#include "entity/customhudlayout.h"
 #include "entwatch.h"
 #include "leader.h"
 #include "map_votes.h"
@@ -100,16 +101,6 @@ ZEPlayer* ZEPlayerHandle::Get() const
 void ZEPlayer::OnSpawn()
 {
 	SetSpeedMod(1.f);
-
-	ZEPlayerHandle handle = GetHandle();
-	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [handle] {
-		if (handle.Get())
-		{
-			handle.Get()->CreatePointOrient();
-			handle.Get()->CreateEntwatchHud();
-		}
-		return -1.0f;
-	});
 }
 
 void ZEPlayer::OnAuthenticated()
@@ -227,29 +218,27 @@ void ZEPlayer::SpawnFlashLight()
 		return;
 
 	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)CCSPlayerController::FromSlot(GetPlayerSlot())->GetPawn();
+	CEntityKeyValues* pKeyValues = g_pEntitySystem->CreateEntityKeyValues();
 
-	CBarnLight* pLight = CreateEntityByName<CBarnLight>("light_barn");
-
-	pLight->m_bEnabled = false;
-	pLight->m_Color->SetColor(g_cvarFlashLightColor.Get().r(), g_cvarFlashLightColor.Get().g(), g_cvarFlashLightColor.Get().b());
-	pLight->m_flBrightness = g_cvarFlashLightBrightness.Get();
-	pLight->m_flRange = 2048.0f;
-	pLight->m_flSoftX = 1.0f;
-	pLight->m_flSoftY = 1.0f;
-	pLight->m_flSkirt = 0.5f;
-	pLight->m_flSkirtNear = 1.0f;
-	pLight->m_vSizeParams->Init(g_cvarFlashLightAngle.Get(), g_cvarFlashLightAngle.Get(), 0.02f);
-	pLight->m_nCastShadows = g_cvarFlashLightShadows.Get();
-	pLight->m_nDirectLight = 3;
-
-	// Have to use keyvalues for this since the schema prop is a resource handle
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	pKeyValues->SetBool("enabled", false);
+	pKeyValues->SetColor("color", Color(g_cvarFlashLightColor.Get().r(), g_cvarFlashLightColor.Get().g(), g_cvarFlashLightColor.Get().b()));
+	pKeyValues->SetFloat("brightness", g_cvarFlashLightBrightness.Get());
+	pKeyValues->SetFloat("range", 2048.0f);
+	pKeyValues->SetFloat("soft_x", 1.0f);
+	pKeyValues->SetFloat("soft_y", 1.0f);
+	pKeyValues->SetFloat("skirt", 0.5f);
+	pKeyValues->SetFloat("skirt_near", 1.0f);
+	pKeyValues->SetVector("size_params", Vector(g_cvarFlashLightAngle.Get(), g_cvarFlashLightAngle.Get(), 0.02f));
+	pKeyValues->SetInt("castshadows", g_cvarFlashLightShadows.Get());
+	pKeyValues->SetInt("directlight", 3);
 	pKeyValues->SetString("lightcookie", "materials/effects/lightcookies/flashlight.vtex");
 
-	pLight->DispatchSpawn(pKeyValues);
+	CBarnLight* pLight = g_pEntitySystem->SpawnEntityByClassname<CBarnLight>("light_barn", pKeyValues);
+
+	if (!pLight)
+		return;
 
 	TeleportFlashLight(pPawn, pLight);
-
 	SetFlashLight(pLight);
 }
 
@@ -324,25 +313,23 @@ void ZEPlayer::StartBeacon(Color color, ZEPlayerHandle hGiver /* = 0*/)
 	SetBeaconColor(color);
 
 	CCSPlayerController* pPlayer = CCSPlayerController::FromSlot(m_slot);
-
 	Vector vecAbsOrigin = pPlayer->GetPawn()->GetAbsOrigin();
 
 	vecAbsOrigin.z += 10;
 
-	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
-
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValues = g_pEntitySystem->CreateEntityKeyValues(nullptr, &vecAbsOrigin);
 
 	pKeyValues->SetString("effect_name", g_cvarBeaconParticle.Get().String());
 	pKeyValues->SetInt("tint_cp", 1);
-	pKeyValues->SetVector("origin", vecAbsOrigin);
+	pKeyValues->SetColor("tint_cp_color", color);
 	pKeyValues->SetBool("start_active", false);
 
-	particle->m_clrTint->SetRawColor(color.GetRawColor());
+	CParticleSystem* particle = g_pEntitySystem->SpawnEntityByClassname<CParticleSystem>("info_particle_system", pKeyValues);
 
-	particle->DispatchSpawn(pKeyValues);
+	if (!particle)
+		return;
+
 	particle->SetParent(pPlayer->GetPawn());
-
 	m_hBeaconParticle.Set(particle);
 
 	CHandle<CParticleSystem> hParticle = particle->GetHandle();
@@ -421,16 +408,17 @@ void ZEPlayer::CreateMark(float fDuration, Vector vecOrigin)
 	if (fDuration <= 0)
 		return;
 
-	CParticleSystem* pMarker = CreateEntityByName<CParticleSystem>("info_particle_system");
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValues = g_pEntitySystem->CreateEntityKeyValues(nullptr, &vecOrigin);
 
 	pKeyValues->SetString("effect_name", g_cvarMarkParticlePath.Get().String());
 	pKeyValues->SetInt("tint_cp", 1);
 	pKeyValues->SetColor("tint_cp_color", GetLeaderColor());
-	pKeyValues->SetVector("origin", vecOrigin);
 	pKeyValues->SetBool("start_active", true);
 
-	pMarker->DispatchSpawn(pKeyValues);
+	CParticleSystem* pMarker = g_pEntitySystem->SpawnEntityByClassname<CParticleSystem>("info_particle_system", pKeyValues);
+
+	if (!pMarker)
+		return;
 
 	UTIL_AddEntityIOEvent(pMarker, "DestroyImmediately", nullptr, nullptr, "", fDuration);
 	UTIL_AddEntityIOEvent(pMarker, "Kill", nullptr, nullptr, "", fDuration + 0.02f);
@@ -469,20 +457,17 @@ void ZEPlayer::PurgeLeaderVotes()
 void ZEPlayer::StartGlow(Color color, int duration)
 {
 	SetGlowColor(color);
+
 	CCSPlayerController* pController = CCSPlayerController::FromSlot(m_slot);
 	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();
-
 	const char* pszModelName = pPawn->GetModelName();
-
-	CBaseModelEntity* pModelGlow = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
-	CBaseModelEntity* pModelRelay = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
-	CEntityKeyValues* pKeyValuesRelay = new CEntityKeyValues();
+	CEntityKeyValues* pKeyValuesRelay = g_pEntitySystem->CreateEntityKeyValues();
+	CEntityKeyValues* pKeyValuesGlow = g_pEntitySystem->CreateEntityKeyValues();
 
 	pKeyValuesRelay->SetString("model", pszModelName);
 	pKeyValuesRelay->SetInt64("spawnflags", 256U);
 	pKeyValuesRelay->SetInt("rendermode", kRenderNone);
 
-	CEntityKeyValues* pKeyValuesGlow = new CEntityKeyValues();
 	pKeyValuesGlow->SetString("model", pszModelName);
 	pKeyValuesGlow->SetInt64("spawnflags", 256U);
 	pKeyValuesGlow->SetColor("glowcolor", color);
@@ -491,8 +476,12 @@ void ZEPlayer::StartGlow(Color color, int duration)
 	pKeyValuesGlow->SetInt("glowstate", 3);
 	pKeyValuesGlow->SetInt("renderamt", 1);
 
-	pModelGlow->DispatchSpawn(pKeyValuesGlow);
-	pModelRelay->DispatchSpawn(pKeyValuesRelay);
+	CBaseModelEntity* pModelGlow = g_pEntitySystem->SpawnEntityByClassname<CBaseModelEntity>("prop_dynamic", pKeyValuesGlow);
+	CBaseModelEntity* pModelRelay = g_pEntitySystem->SpawnEntityByClassname<CBaseModelEntity>("prop_dynamic", pKeyValuesRelay);
+
+	if (!pModelGlow || !pModelRelay)
+		return;
+
 	pModelRelay->AcceptInput("FollowEntity", "!activator", pPawn);
 	pModelGlow->AcceptInput("FollowEntity", "!activator", pModelRelay);
 
@@ -625,37 +614,6 @@ void ZEPlayer::ReplicateConVar(const char* pszName, const char* pszValue)
 	delete data;
 }
 
-void ZEPlayer::CreatePointOrient()
-{
-	CPointOrient* pOrient = GetPointOrient();
-	if (pOrient)
-	{
-		pOrient->Remove();
-		pOrient = nullptr;
-	}
-
-	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
-	if (!pController)
-		return;
-
-	CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
-	if (!pPawn)
-		return;
-
-	pOrient = CreateEntityByName<CPointOrient>("point_orient");
-	pOrient->m_bActive(true);
-	pOrient->m_nGoalDirection(PointOrientGoalDirectionType_t::eEyesForward);
-
-	pOrient->DispatchSpawn();
-	SetPointOrient(pOrient);
-
-	Vector origin = pPawn->GetEyePosition();
-	pOrient->Teleport(&origin, nullptr, nullptr);
-
-	pOrient->AcceptInput("SetParent", "!activator", pPawn);
-	pOrient->AcceptInput("SetTarget", "!activator", pPawn);
-}
-
 void ZEPlayer::ToggleThirdPerson(float flDistance, bool bForce)
 {
 	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
@@ -713,8 +671,10 @@ void ZEPlayer::ToggleThirdPerson(float flDistance, bool bForce)
 		if (!pCamera)
 		{
 			// No camera found, spawn one
-			pCamera = CreateEntityByName<CCSCustomPlayerCamera>("custom_player_camera");
-			pCamera->DispatchSpawn();
+			pCamera = g_pEntitySystem->SpawnEntityByClassname<CCSCustomPlayerCamera>("custom_player_camera");
+
+			if (!pCamera)
+				return;
 		}
 
 		m_hCustomCamera = pCamera;
@@ -739,126 +699,124 @@ void ZEPlayer::ToggleThirdPerson(float flDistance, bool bForce)
 	ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX "You have enabled thirdperson.");
 }
 
-void ZEPlayer::CreateEntwatchHud()
+void ZEPlayer::SetEntwatchHudEnabled(bool bEnabled)
 {
+	m_bEntwatchHud = bEnabled;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUD_MODE, m_bEntwatchHud ? 1 : 0);
+
 	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
-	if (!pController)
-		return;
-
-	CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
-	if (!pPawn)
-		return;
-
-	CPointOrient* pOrient = GetPointOrient();
-	if (!pOrient)
-		return;
-
-	CPointWorldText* pText = GetEntwatchHud();
-	if (pText)
+	if (pController)
 	{
-		pText->Remove();
-		pText = nullptr;
-	}
+		if (g_pEWHandler->hHud.Get())
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", "Hidden", !m_bEntwatchHud, pController);
 
-	pText = CreateEntityByName<CPointWorldText>("point_worldtext");
-	pText->m_bEnabled(true);
-	pText->m_bFullbright(true);
-	pText->m_flFontSize(GetEntwatchHudSize());
-
-	Color col;
-	int a = m_colorEntwatchHud.a();
-	if (a == 255) // 254 allows it to be visible through some items
-		col.SetColor(m_colorEntwatchHud.r(), m_colorEntwatchHud.g(), m_colorEntwatchHud.b(), 254);
-	else
-		col.SetColor(m_colorEntwatchHud.r(), m_colorEntwatchHud.g(), m_colorEntwatchHud.b(), a);
-
-	pText->m_Color = col;
-
-	pText->m_flWorldUnitsPerPx(0.005f);
-	pText->m_nJustifyVertical(PointWorldTextJustifyVertical_t::POINT_WORLD_TEXT_JUSTIFY_VERTICAL_TOP);
-
-	V_strncpy(pText->m_FontName, "Verdana Bold", 64);
-
-	pText->SetMessage("");
-
-	pText->DispatchSpawn();
-	SetEntwatchHud(pText);
-
-	pText->AcceptInput("SetParent", "!activator", pOrient);
-
-	Vector origin = pOrient->GetAbsOrigin();
-	QAngle vmangles = pOrient->GetAbsRotation();
-
-	Vector forward;
-	Vector right;
-	Vector up;
-	AngleVectors(vmangles, &forward, &right, &up);
-
-	origin += (forward * 7.0f);
-
-	// -x = move left,  +x = move right
-	origin += (right * GetEntwatchHudX());
-
-	// -y = move up,   +y = move down
-	origin -= (up * GetEntwatchHudY());
-
-	QAngle angles;
-	angles.x = 0.0f;
-	angles.y = AngleNormalize(vmangles.y - 90.0f);
-	angles.z = AngleNormalize(-vmangles.x + 90.0f);
-
-	pText->Teleport(&origin, &angles, nullptr);
-}
-
-int ZEPlayer::GetEntwatchHudMode()
-{
-	if (IsFakeClient())
-		return 0;
-	return m_iEntwatchHudMode;
-}
-
-void ZEPlayer::SetEntwatchHudMode(int iMode)
-{
-	m_iEntwatchHudMode = iMode;
-	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUD_MODE, m_iEntwatchHudMode);
-}
-
-void ZEPlayer::SetEntwatchHudColor(Color colorHud)
-{
-	m_colorEntwatchHud = colorHud;
-	std::string strColor = std::to_string(colorHud.r()) + " " + std::to_string(colorHud.g()) + " " + std::to_string(colorHud.b()) + " " + std::to_string(colorHud.a());
-	g_pUserPreferencesSystem->SetPreference(m_slot.Get(), EW_PREF_HUDCOLOR, strColor.c_str());
-
-	CPointWorldText* pText = GetEntwatchHud();
-	if (pText)
-	{
-		Color c;
-		if (colorHud.a() == 255)
-			c.SetColor(colorHud.r(), colorHud.g(), colorHud.b(), 254);
-		else
-			c = colorHud;
-		pText->m_Color = c;
+		if (g_pEWHandler->hHudSettings.Get())
+			g_pEWHandler->hHudSettings->SetHasClass("ToggleEntWatchHud", "Selected", m_bEntwatchHud, pController);
 	}
 }
 
-void ZEPlayer::SetEntwatchHudPos(float x, float y)
+void ZEPlayer::SetEntwatchPlayerNames(bool bEnabled)
 {
-	m_flEntwatchHudX = x;
-	m_flEntwatchHudY = y;
-	g_pUserPreferencesSystem->SetPreferenceFloat(m_slot.Get(), EW_PREF_HUDPOS_X, m_flEntwatchHudX);
-	g_pUserPreferencesSystem->SetPreferenceFloat(m_slot.Get(), EW_PREF_HUDPOS_Y, m_flEntwatchHudY);
+	m_bEntwatchPlayerNames = bEnabled;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUD_PLAYERNAMES, m_bEntwatchPlayerNames ? 1 : 0);
 
-	CreateEntwatchHud();
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+	if (pController)
+	{
+		if (g_pEWHandler->hHudSettings.Get())
+			g_pEWHandler->hHudSettings->SetHasClass("TogglePlayerNames", "Selected", m_bEntwatchPlayerNames, pController);
+	}
 }
 
-void ZEPlayer::SetEntwatchHudSize(float flSize)
+void ZEPlayer::SetEntwatchHudColor(int iColorIndex)
 {
-	m_flEntwatchHudSize = flSize;
-	g_pUserPreferencesSystem->SetPreferenceFloat(m_slot.Get(), EW_PREF_HUDSIZE, m_flEntwatchHudSize);
+	const std::string sOldColor = std::to_string(m_iEntwatchColor);
+	const std::string sNewColor = std::to_string(iColorIndex);
 
-	CPointWorldText* pText = GetEntwatchHud();
-	if (pText)
-		pText->m_flFontSize = m_flEntwatchHudSize;
+	// Remove old
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+	if (pController)
+	{
+		std::string sOldText = "ColorPanel-" + sOldColor;
+		std::string sNewText = "ColorPanel-" + sNewColor;
+		if (g_pEWHandler->hHudSettings.Get())
+		{
+			g_pEWHandler->hHudSettings->SetHasClass(sOldText, "Selected", false, pController);
+			g_pEWHandler->hHudSettings->SetHasClass(sNewText, "Selected", true, pController);
+		}
+
+		if (g_pEWHandler->hHud.Get())
+		{
+			sOldText = EW_HUDCOLOR_CLASS + sOldColor;
+			sNewText = EW_HUDCOLOR_CLASS + sNewColor;
+
+			g_pEWHandler->hHud->SetHasClass("ItemNamesColumn", sOldText, false, pController);
+			g_pEWHandler->hHud->SetHasClass("ItemNamesColumn", sNewText, true, pController);
+		}
+	}
+
+	m_iEntwatchColor = iColorIndex;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUDCOLOR, m_iEntwatchColor);
+}
+
+void ZEPlayer::SetEntwatchHudPos(int x, int y)
+{
+	const std::string sNewX = std::to_string(x);
+	const std::string sNewY = std::to_string(y);
+	std::string oldx = EW_HUDPOS_X_CLASS + std::to_string(m_iEntwatchHudX);
+	std::string oldy = EW_HUDPOS_Y_CLASS + std::to_string(m_iEntwatchHudY);
+	std::string newx = EW_HUDPOS_X_CLASS + sNewX;
+	std::string newy = EW_HUDPOS_Y_CLASS + sNewY;
+	// Remove old
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+	if (pController)
+	{
+		if (g_pEWHandler->hHud.Get())
+		{
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", oldx, false, pController);
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", oldy, false, pController);
+
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", newx, true, pController);
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", newy, true, pController);
+		}
+
+		if (g_pEWHandler->hHudSettings.Get())
+		{
+			g_pEWHandler->hHudSettings->SetDialogVariableString("HudPosXValue", "HudPosX", sNewX, pController);
+			g_pEWHandler->hHudSettings->SetDialogVariableString("HudPosYValue", "HudPosY", sNewY, pController);
+		}
+	}
+
+	m_iEntwatchHudX = x;
+	m_iEntwatchHudY = y;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUDPOS_X, m_iEntwatchHudX);
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUDPOS_Y, m_iEntwatchHudY);
+}
+
+void ZEPlayer::SetEntwatchHudSize(int iSize)
+{
+	const std::string sOldSize = std::to_string(m_iEntwatchHudSize);
+	const std::string sNewSize = std::to_string(iSize);
+
+	CCSPlayerController* pController = CCSPlayerController::FromSlot(GetPlayerSlot());
+	if (pController)
+	{
+		std::string oldText = EW_HUDSIZE_CLASS + sOldSize;
+		std::string newText = EW_HUDSIZE_CLASS + sNewSize;
+		// Remove old
+		if (g_pEWHandler->hHud.Get())
+		{
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", oldText, false, pController);
+			g_pEWHandler->hHud->SetHasClass("HudTextPanel", newText, true, pController);
+		}
+
+		// Set settings menu text
+		if (g_pEWHandler->hHudSettings.Get())
+			g_pEWHandler->hHudSettings->SetDialogVariableString("HudSizeValue", "Scale", sNewSize, pController);
+	}
+
+	m_iEntwatchHudSize = iSize;
+	g_pUserPreferencesSystem->SetPreferenceInt(m_slot.Get(), EW_PREF_HUDSIZE, m_iEntwatchHudSize);
 }
 
 void CPlayerManager::OnBotConnected(CPlayerSlot slot)
@@ -1181,21 +1139,6 @@ void CPlayerManager::UpdatePlayerStates()
 #endif
 
 			pPlayer->SetPlayerState(iCurrentPlayerState);
-		}
-
-		// Update entwatch hud position
-		if (g_cvarEnableEntWatch.Get() && g_cvarEnableEntwatchHud.Get())
-		{
-			CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
-			if (!pPawn)
-				continue;
-
-			CPointOrient* pOrient = pPlayer->GetPointOrient();
-			if (pOrient)
-			{
-				Vector origin = pPawn->GetEyePosition();
-				pOrient->Teleport(&origin, nullptr, nullptr);
-			}
 		}
 	}
 }

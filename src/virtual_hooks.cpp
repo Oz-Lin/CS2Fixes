@@ -58,6 +58,7 @@
 #include "tier0/splitstring.h"
 #include "tier0/vprof.h"
 #include "usermessages.pb.h"
+#include "utils/countdown_bridge.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
 
@@ -396,6 +397,12 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 	uint32 uiTextLength = strlen(pText);
 	uint32 uiFilteredTextLength = 0;
 	char filteredText[256];
+	if (pMsg->text().size() >= sizeof(filteredText))
+	{
+		V_snprintf(buf, sizeof(buf), "%s %s", " \7CONSOLE:\4", pText + sizeof("Console:"));
+		pMsg->set_text(buf);
+		return;
+	}
 
 	for (uint32 i = 0; i < uiTextLength; i++)
 	{
@@ -480,11 +487,13 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 		int mins = iTriggerTime / 60;
 		int secs = iTriggerTime % 60;
 
-		// parse to external CS# countdown timer plugin
-		V_snprintf(buf, sizeof(buf), "css_countdown_text %d \"%s\"", uiTriggerTimerLength, pText + sizeof("Console:"));
-		g_pEngineServer2->ServerCommand(buf);
+		// Keep a single external CountDown HUD sink; the existing chat annotation is separate.
+		char countdownCommand[ozlin::countdown_bridge::kCommandBytes];
+		const std::string_view countdownText(pMsg->text().data() + sizeof("Console:"),
+											 pMsg->text().size() - sizeof("Console:"));
+		if (g_pEngineServer2 && ozlin::countdown_bridge::Format(countdownCommand, uiTriggerTimerLength, countdownText))
+			g_pEngineServer2->ServerCommand(countdownCommand);
 
-		// now back to the Red Console + Green Say Text
 		V_snprintf(buf, sizeof(buf), "%s %s %s %2d:%02d", " \7CONSOLE:\4", pText + sizeof("Console:"), "\x10- @", mins, secs);
 	}
 	else
@@ -716,14 +725,6 @@ KHook::Return<void> Hook_CheckTransmit_Post(ISource2GameEntities* pThis, CCheckT
 
 			if (!g_cvarFlashLightTransmitOthers.Get() && pFlashLight)
 				pInfo->m_pTransmitEntity->Clear(pFlashLight->entindex());
-
-			if (g_cvarEnableEntWatch.Get() && g_pEWHandler->IsConfigLoaded())
-			{
-				// Don't transmit other players' entwatch hud
-				CPointWorldText* pHud = pController->IsConnected() ? g_playerManager->GetPlayer(j)->GetEntwatchHud() : nullptr;
-				if (pHud)
-					pInfo->m_pTransmitEntity->Clear(pHud->entindex());
-			}
 
 			// Always transmit other players if spectating
 			if (!g_cvarEnableHide.Get() || pSelfController->GetPawnState() == STATE_OBSERVER_MODE)

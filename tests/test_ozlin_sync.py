@@ -49,8 +49,14 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
             if path.suffix in {".cpp", ".h"}:
                 self.assertIsNone(re.search(r"^(<<<<<<<|=======|>>>>>>>)", path.read_text(encoding="utf-8-sig"), re.M), str(path))
 
-    def test_countdown_bridge_is_exactly_preserved(self):
-        self.assertEqual(read("src/virtual_hooks.cpp").count(BRIDGE), 1)
+    def test_historical_and_current_countdown_sinks(self):
+        self.assertEqual(git("show", "e0e2978:src/virtual_hooks.cpp").count(BRIDGE), 1)
+        bridge = read("src/utils/countdown_bridge.h")
+        source = read("src/virtual_hooks.cpp")
+        self.assertEqual(bridge.count("css_countdown_text "), 1)
+        self.assertEqual(source.count("ServerCommand(countdownCommand)"), 1)
+        self.assertNotIn("css_countdown_text", source)
+        self.assertNotIn("countdown_bridge::Format", read("src/detours.cpp"))
         source = checkpoint_read("src/detours.cpp")
         self.assertEqual(source.count(BRIDGE), 1)
         without_bridge = source.replace(BRIDGE, "").replace('#include "engine2/ivengineserver2.h"\n', "")
@@ -58,7 +64,7 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
 
     def test_bridge_still_uses_existing_timer_gate(self):
         source = read("src/virtual_hooks.cpp")
-        self.assertLess(source.index("if ((uiTriggerTimerLength > 4)"), source.index("css_countdown_text"))
+        self.assertLess(source.index("if ((uiTriggerTimerLength > 4)"), source.index("countdown_bridge::Format"))
         self.assertIn("g_cvarEnableTriggerTimer.Get() && GetGlobals() && g_pGameRules", source)
 
     def test_no_stale_clantag_duplicate(self):
@@ -75,7 +81,7 @@ class HistoricalSyncCheckpoint(unittest.TestCase):
 
     def test_default_external_features_stay_disabled(self):
         cfg = read("cfg/cs2fixes.cfg")
-        for name in ("cs2f_weapons_enable", "cs2f_votemanager_enable"):
+        for name in ("cs2f_weapons_enable", "cs2f_votemanager_enable", "entwatch_enable", "cs2f_trigger_timer_enable"):
             self.assertRegex(cfg, r"(?m)^" + name + r"\s+0\s")
 
     def test_upstream_files_match_except_bridge(self):
