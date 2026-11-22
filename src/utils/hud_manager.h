@@ -27,6 +27,7 @@ extern CConVar<bool> g_cvarFixHudFlashing;
 
 enum class EHudPriority
 {
+	MapCountdown = 1,
 	InfectionCountdown = 2,
 	AdminHSay = 99
 };
@@ -60,5 +61,8 @@ private:
 void SendHudMessage(ZEPlayer* pPlayer, int iDuration, EHudPriority ePriority, const char* pszMessage, ...);
 void SendHudMessageAll(int iDuration, EHudPriority ePriority, const char* pszMessage, ...);
 
+// Lowest-priority native countdown frame; no priority reservation or duration leeway.
+void SendMapCountdownHudFrame(const std::vector<ZEPlayerHandle>& recipients, const char* pszHtml);
+void ResetMapCountdownHudFrames();
 void StartFlashingFixTimer();
 std::string EscapeHTMLSpecialCharacters(std::string strMsg);

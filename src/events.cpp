@@ -33,6 +33,7 @@
 #include "panoramavote.h"
 #include "rampbugfix/module.h"
 #include "topdefender.h"
+#include "virtual_hooks.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
 
@@ -66,6 +67,7 @@ void UnregisterEventListeners()
 
 GAME_EVENT_F(round_prestart)
 {
+	MapCountdown_OnRoundEnd();
 	rampbugfix::ResetAll();
 	RemoveTimers(TIMERFLAG_ROUND);
 
@@ -207,6 +209,7 @@ CConVar<bool> g_cvarFullAllTalk("cs2f_full_alltalk", FCVAR_NONE, "Whether to enf
 
 GAME_EVENT_F(round_start)
 {
+	MapCountdown_OnRoundStart();
 	g_pPanoramaVoteHandler->Init();
 
 	if (g_cvarEnableZR.Get())
@@ -229,6 +232,7 @@ GAME_EVENT_F(round_start)
 
 GAME_EVENT_F(round_end)
 {
+	MapCountdown_OnRoundEnd();
 	if (g_cvarFixHudFlashing.Get() && g_pGameRules)
 		g_pGameRules->m_bGameRestart = false;
 

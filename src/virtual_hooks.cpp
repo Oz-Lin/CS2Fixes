@@ -56,11 +56,16 @@
 #include "rampbugfix/module.h"
 #include "tier0/icvar.h"
 #include "tier0/splitstring.h"
+#include "tier0/threadtools.h"
 #include "tier0/vprof.h"
 #include "usermessages.pb.h"
 #include "utils/countdown_bridge.h"
+#include "utils/hud_manager.h"
+#include "utils/map_countdown.h"
 #include "votemanager.h"
 #include "zombiereborn.h"
+
+#include <limits>
 
 #include "tier0/memdbgon.h"
 
@@ -386,7 +391,89 @@ KHook::Return<void> Hook_ClientSvcUserMessage(IServerGameClients* pThis, CPlayer
 	return {KHook::Action::Ignore};
 }
 
-void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
+// Preserve the previous external route for instances that intentionally enable the trigger.
+CConVar<bool> g_cvarEnableTriggerTimer("cs2f_trigger_timer_enable", FCVAR_NONE, "Whether to process countdown messages said by Console (e.g. Hold for 10 seconds) and append the round time where the countdown resolves", false);
+static CConVar<CUtlString> g_cvarCountdownHudRoute("cs2f_trigger_timer_hud_route", FCVAR_NONE, "Map countdown HUD route: legacy (external plugin), native (CS2Fixes only), none (chat annotation only)", "legacy");
+
+namespace
+{
+ozlin::map_countdown::State g_mapCountdown;
+std::weak_ptr<CTimer> g_mapCountdownTimer;
+
+void CancelMapCountdownTimer()
+{
+	if (auto timer = g_mapCountdownTimer.lock())
+		timer->Cancel();
+	g_mapCountdownTimer.reset();
+}
+
+void StopMapCountdownPresentation()
+{
+	CancelMapCountdownTimer();
+	g_mapCountdown.Stop();
+}
+
+void StartNativeMapCountdown(std::uint32_t seconds, std::string_view text, bool bLocalOnly, int nClientCount, const uint64* clients)
+{
+	if (!ThreadInMainThread() || !GetGlobals() || !g_playerManager ||
+		!g_pGameRules || g_pGameRules->m_bWarmupPeriod)
+		return;
+
+	// This presenter is for map-wide messages, not private server-console replies.
+	// Scope delivery to the *original* connected human recipients and do not retarget.
+	static_assert(ABSOLUTE_PLAYER_LIMIT <= std::numeric_limits<uint64>::digits);
+	const auto audience = ozlin::map_countdown::SelectAudience(bLocalOnly, nClientCount, clients != nullptr);
+	if (audience == ozlin::map_countdown::Audience::Unknown)
+		return;
+	// The pinned SDK explicitly documents {-1, nullptr} as broadcast and one uint64 mask otherwise.
+	const uint64 mask = audience == ozlin::map_countdown::Audience::Mask ? *clients : ~uint64{0};
+	std::vector<ZEPlayerHandle> recipients;
+	for (int i = 0; i < GetGlobals()->maxClients && i < ABSOLUTE_PLAYER_LIMIT; ++i)
+	{
+		auto* pPlayer = g_playerManager->GetPlayer(i);
+		if (!pPlayer || pPlayer->IsFakeClient())
+			continue;
+		auto* pController = CCSPlayerController::FromSlot(i);
+		if (!pController || !pController->IsConnected() || pController->IsBot() || pController->m_bIsHLTV())
+			continue;
+		if (!(mask & (std::uint64_t{1} << i)))
+			return; // Do not convert a targeted message to a map-wide HUD.
+		recipients.push_back(pPlayer->GetHandle());
+	}
+	if (recipients.empty() || !g_mapCountdown.Start(g_flUniversalTime, seconds, text))
+		return;
+
+	CancelMapCountdownTimer();
+	// Defer rendering until the game timer runs, not from inside PostEventAbstract.
+	g_mapCountdownTimer = CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [recipients = std::move(recipients)]() {
+		if (!g_cvarEnableTriggerTimer.Get() || !GetGlobals() || !g_pGameRules || g_pGameRules->m_bWarmupPeriod ||
+			ozlin::map_countdown::ParseRoute(g_cvarCountdownHudRoute.Get().String()) != ozlin::map_countdown::Route::Native ||
+			!g_mapCountdown.IsRunning(g_flUniversalTime))
+		{
+			g_mapCountdown.Stop();
+			return -1.0f; // RunTimers removes this running timer; never cancel it reentrantly.
+		}
+		const auto html = g_mapCountdown.Frame(g_flUniversalTime);
+		if (!html.empty())
+			SendMapCountdownHudFrame(recipients, html.c_str());
+		return 1.0f;
+	});
+}
+} // namespace
+
+void MapCountdown_OnRoundStart()
+{
+	CancelMapCountdownTimer();
+	g_mapCountdown.OnRoundStart();
+}
+
+void MapCountdown_OnRoundEnd()
+{
+	CancelMapCountdownTimer();
+	g_mapCountdown.OnRoundEnd();
+}
+
+void SayChatMessageWithTimer(CUserMessageSayText* pMsg, bool bLocalOnly, int nClientCount, const uint64* clients)
 {
 	VPROF("SayChatMessageWithTimer");
 
@@ -447,7 +534,8 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 			{
 				if (pNextWord[0] == 's' && pNextWord[1] == 'e' && pNextWord[2] == 'c')
 					uiTriggerTimerLength = uiCurrentValue;
-				if (pNextWord[0] == 'm' && pNextWord[1] == 'i' && pNextWord[2] == 'n')
+				if (pNextWord[0] == 'm' && pNextWord[1] == 'i' && pNextWord[2] == 'n' &&
+					uiCurrentValue <= std::numeric_limits<uint32>::max() / 60)
 					uiTriggerTimerLength = uiCurrentValue * 60;
 			}
 		}
@@ -476,7 +564,7 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 	float fCurrentRoundClock = g_pGameRules->m_iRoundTime - (GetGlobals()->curtime - g_pGameRules->m_fRoundStartTime.Get().GetTime());
 
 	// Only display trigger time if the timer is greater than 4 seconds, and time expires within the round
-	if ((uiTriggerTimerLength > 4) && (fCurrentRoundClock > uiTriggerTimerLength))
+	if ((uiTriggerTimerLength > 4) && (fCurrentRoundClock > uiTriggerTimerLength) && std::isfinite(fCurrentRoundClock))
 	{
 		int iTriggerTime = fCurrentRoundClock - uiTriggerTimerLength;
 
@@ -487,12 +575,28 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 		int mins = iTriggerTime / 60;
 		int secs = iTriggerTime % 60;
 
-		// Keep a single external CountDown HUD sink; the existing chat annotation is separate.
-		char countdownCommand[ozlin::countdown_bridge::kCommandBytes];
 		const std::string_view countdownText(pMsg->text().data() + sizeof("Console:"),
 											 pMsg->text().size() - sizeof("Console:"));
-		if (g_pEngineServer2 && ozlin::countdown_bridge::Format(countdownCommand, uiTriggerTimerLength, countdownText))
-			g_pEngineServer2->ServerCommand(countdownCommand);
+		// Choose one mutually exclusive HUD sink. Failure in one never touches the other.
+		switch (ozlin::map_countdown::ParseRoute(g_cvarCountdownHudRoute.Get().String()))
+		{
+			case ozlin::map_countdown::Route::Legacy:
+			{
+				if (ThreadInMainThread())
+					StopMapCountdownPresentation();
+				char countdownCommand[ozlin::countdown_bridge::kCommandBytes];
+				if (g_pEngineServer2 && ozlin::countdown_bridge::Format(countdownCommand, uiTriggerTimerLength, countdownText))
+					g_pEngineServer2->ServerCommand(countdownCommand);
+				break;
+			}
+			case ozlin::map_countdown::Route::Native:
+				StartNativeMapCountdown(uiTriggerTimerLength, countdownText, bLocalOnly, nClientCount, clients);
+				break;
+			case ozlin::map_countdown::Route::None:
+				if (ThreadInMainThread())
+					StopMapCountdownPresentation();
+				break;
+		}
 
 		V_snprintf(buf, sizeof(buf), "%s %s %s %2d:%02d", " \7CONSOLE:\4", pText + sizeof("Console:"), "\x10- @", mins, secs);
 	}
@@ -502,7 +606,6 @@ void SayChatMessageWithTimer(CUserMessageSayText* pMsg)
 	pMsg->set_text(buf);
 }
 
-CConVar<bool> g_cvarEnableTriggerTimer("cs2f_trigger_timer_enable", FCVAR_NONE, "Whether to process countdown messages said by Console (e.g. Hold for 10 seconds) and append the round time where the countdown resolves", false);
 CConVar<bool> g_cvarBlockParticleMsgs("cs2f_block_particle_msgs", FCVAR_NONE, "Whether to block CUserMsg_ParticleManager messages to fix lag/crashes, experimental", false);
 
 KHook::Return<void> Hook_PostEventAbstract(IGameEventSystem* pThis, CSplitScreenSlot nSlot, bool bLocalOnly, int nClientCount, const uint64* clients,
@@ -636,7 +739,7 @@ KHook::Return<void> Hook_PostEventAbstract(IGameEventSystem* pThis, CSplitScreen
 
 		if (g_cvarEnableTriggerTimer.Get() && GetGlobals() && g_pGameRules)
 		{
-			SayChatMessageWithTimer(msg);
+			SayChatMessageWithTimer(msg, bLocalOnly, nClientCount, clients);
 		}
 		else
 		{

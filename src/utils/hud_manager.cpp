@@ -18,19 +18,28 @@
  */
 
 #include "hud_manager.h"
+#include "map_countdown.h"
 #include "../cs2fixes.h"
 #include "../ctimer.h"
+#include "entity/ccsplayercontroller.h"
 #include "../recipientfilters.h"
 #include "engine2/igameeventsystem.h"
 #include "entity/cgamerules.h"
 #include "gameevents.pb.h"
 #include "networksystem/inetworkmessages.h"
+#include <array>
 
 CConVar<bool> g_cvarFixHudFlashing("cs2f_fix_hud_flashing", FCVAR_NONE, "Whether to fix hud flashing using a workaround, this BREAKS warmup so pick one or the other", false);
 CConVar<bool> g_cvarDisableHudOutsideRound("cs2f_disable_hud_outside_round", FCVAR_NONE, "Whether to disable hud messages that would flash when a round is not ongoing, since flashing fix cannot run then", false);
 CConVar<int> g_cvarHudDurationLeeway("cs2f_hud_duration_leeway", FCVAR_NONE, "Extra seconds duration to leave hud messages visible (without priority), reduces transition flashes between different priority messages", 2);
 
 static std::vector<std::shared_ptr<CHudMessage>> g_vecHudMessages;
+static std::array<ozlin::map_countdown::PopupGuard, ABSOLUTE_PLAYER_LIMIT> g_countdownPopupGuards;
+
+void ResetMapCountdownHudFrames()
+{
+	g_countdownPopupGuards = {};
+}
 
 bool ShouldDisplayForPlayer(ZEPlayerHandle hPlayer, EHudPriority ePriority)
 {
@@ -44,12 +53,36 @@ bool ShouldDisplayForPlayer(ZEPlayerHandle hPlayer, EHudPriority ePriority)
 	return true;
 }
 
-void CreateHudMessage(std::shared_ptr<CHudMessage> pHudMessage)
+void CreateHudMessage(std::shared_ptr<CHudMessage> pHudMessage, bool bMapCountdownFrame = false)
 {
-	if (!g_pGameRules)
+	if (!g_pGameRules || (bMapCountdownFrame && (!g_gameEventManager || !g_gameEventSystem || !g_pNetworkMessages)))
 		return;
 
 	if (g_cvarDisableHudOutsideRound.Get() && !g_pGameRules->m_bGameRestart())
+		return;
+
+	CRecipientFilter filter;
+
+	bool bHasRecipient = false;
+	std::vector<ZEPlayerHandle> priorityRecipients;
+	for (ZEPlayerHandle hPlayer : pHudMessage->GetRecipients())
+	{
+		auto* pPlayer = hPlayer.Get();
+		if (!pPlayer || !ShouldDisplayForPlayer(hPlayer, pHudMessage->GetPriority()))
+			continue;
+		const auto slot = pPlayer->GetPlayerSlot();
+		if (!slot.IsValid())
+			continue;
+		if (bMapCountdownFrame && g_countdownPopupGuards[slot.Get()].Blocks(hPlayer.GetIndex(), g_flUniversalTime))
+			continue;
+
+		filter.AddRecipient(slot);
+		bHasRecipient = true;
+		if (!bMapCountdownFrame && pHudMessage->GetPriority() > EHudPriority::MapCountdown)
+			priorityRecipients.push_back(hPlayer);
+	}
+
+	if (bMapCountdownFrame && !bHasRecipient)
 		return;
 
 	static IGameEvent* pEvent = nullptr;
@@ -60,8 +93,9 @@ void CreateHudMessage(std::shared_ptr<CHudMessage> pHudMessage)
 	if (!pEvent)
 		return;
 
+	const int iVisibleDuration = pHudMessage->GetDuration() + (bMapCountdownFrame ? 0 : g_cvarHudDurationLeeway.Get());
 	pEvent->SetString("loc_token", pHudMessage->GetMessage());
-	pEvent->SetInt("duration", pHudMessage->GetDuration() + g_cvarHudDurationLeeway.Get());
+	pEvent->SetInt("duration", iVisibleDuration);
 	pEvent->SetInt("userid", -1);
 
 	NetMessageInfo_t* pMsg = g_pNetworkMessages->FindNetworkMessageById(GE_Source1LegacyGameEvent);
@@ -69,22 +103,22 @@ void CreateHudMessage(std::shared_ptr<CHudMessage> pHudMessage)
 	if (!pMsg)
 		return;
 
-	CNetMessagePB<CMsgSource1LegacyGameEvent>* data = pMsg->AllocateMessage()->ToPB<CMsgSource1LegacyGameEvent>();
-	CRecipientFilter filter;
+	auto* pMessage = pMsg->AllocateMessage();
+	if (!pMessage)
+		return;
+	CNetMessagePB<CMsgSource1LegacyGameEvent>* data = pMessage->ToPB<CMsgSource1LegacyGameEvent>();
 
-	for (ZEPlayerHandle hPlayer : pHudMessage->GetRecipients())
-		if (ShouldDisplayForPlayer(hPlayer, pHudMessage->GetPriority()))
-			filter.AddRecipient(hPlayer.Get()->GetPlayerSlot());
-
-	// Store the new hud message
-	g_vecHudMessages.push_back(pHudMessage);
-
-	// Start a timer to remove this hud message after its duration passes
-	CTimer::Create(pHudMessage->GetDuration(), TIMERFLAG_NONE, [pHudMessage]() {
-		g_vecHudMessages.erase(std::remove(g_vecHudMessages.begin(), g_vecHudMessages.end(), pHudMessage), g_vecHudMessages.end());
-
-		return -1.0f;
-	});
+	// A low-priority one-frame countdown never reserves the HUD or delays other messages.
+	if (!bMapCountdownFrame)
+	{
+		for (auto handle : priorityRecipients)
+			g_countdownPopupGuards[handle.GetPlayerSlot()].Reserve(handle.GetIndex(), g_flUniversalTime, iVisibleDuration);
+		g_vecHudMessages.push_back(pHudMessage);
+		CTimer::Create(pHudMessage->GetDuration(), TIMERFLAG_NONE, [pHudMessage]() {
+			g_vecHudMessages.erase(std::remove(g_vecHudMessages.begin(), g_vecHudMessages.end(), pHudMessage), g_vecHudMessages.end());
+			return -1.0f;
+		});
+	}
 
 	g_gameEventManager->SerializeEvent(pEvent, data);
 	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pMsg, data, 0);
@@ -131,6 +165,24 @@ void SendHudMessageAll(int iDuration, EHudPriority ePriority, const char* pszMes
 	}
 
 	CreateHudMessage(pHudMessage);
+}
+
+void SendMapCountdownHudFrame(const std::vector<ZEPlayerHandle>& recipients, const char* pszHtml)
+{
+	if (!GetGlobals() || !g_playerManager || !pszHtml || !*pszHtml)
+		return;
+
+	auto pHudMessage = std::make_shared<CHudMessage>(pszHtml, ozlin::map_countdown::kHudFrameSeconds, EHudPriority::MapCountdown);
+	for (auto handle : recipients)
+	{
+		auto* pPlayer = handle.Get(); // Serial check: never retarget to a re-used slot.
+		if (!pPlayer || pPlayer->IsFakeClient())
+			continue;
+		auto* pController = CCSPlayerController::FromSlot(pPlayer->GetPlayerSlot());
+		if (pController && pController->IsConnected() && !pController->IsBot() && !pController->m_bIsHLTV())
+			pHudMessage->AddRecipient(handle);
+	}
+	CreateHudMessage(pHudMessage, true);
 }
 
 void StartFlashingFixTimer()

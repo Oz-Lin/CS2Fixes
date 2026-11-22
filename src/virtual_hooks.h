@@ -46,6 +46,8 @@ class IVEngineServer2;
 
 void InitVirtualHooks();
 void RemoveVirtualHooks();
+void MapCountdown_OnRoundStart();
+void MapCountdown_OnRoundEnd();
 
 KHook::Return<void> Hook_GameFrame_Post(IServerGameDLL* pThis, bool simulating, bool bFirstTick, bool bLastTick);
 KHook::Return<void> Hook_GameServerSteamAPIActivated(IServerGameDLL* pThis);

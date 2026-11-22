@@ -223,6 +223,8 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 		return false;
 	}
 
+	MapCountdown_OnRoundEnd();
+	ResetMapCountdownHudFrames();
 	ConVar_Unregister();
 
 	RemoveVirtualHooks();
@@ -368,6 +370,8 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 						   bool loadGame,
 						   bool background)
 {
+	MapCountdown_OnRoundEnd();
+	ResetMapCountdownHudFrames();
 	Message("OnLevelInit(%s)\n", pMapName);
 
 	// Only patch BotNavIgnore while a map is loaded, else adding bots will crash
@@ -393,6 +397,8 @@ void CS2Fixes::OnLevelInit(char const* pMapName,
 
 void CS2Fixes::OnLevelShutdown()
 {
+	MapCountdown_OnRoundEnd();
+	ResetMapCountdownHudFrames();
 	Message("OnLevelShutdown()\n");
 	rampbugfix::ResetAll();
 
